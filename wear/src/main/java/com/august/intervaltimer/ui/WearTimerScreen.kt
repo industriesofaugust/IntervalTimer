@@ -1,8 +1,5 @@
 package com.august.intervaltimer.ui
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -23,12 +20,12 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -44,98 +41,100 @@ import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import com.august.intervaltimer.haptics.HapticsPlayer
-import com.august.intervaltimer.metrics.MetricsViewModel
+import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
-import com.august.intervaltimer.sync.soundVolumePercent
-import com.august.intervaltimer.timer.SoundPlayer
-import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
-import com.august.intervaltimer.timer.TimerViewModel
+import com.august.intervaltimer.workout.WorkoutSession
 import kotlin.math.roundToInt
 
 @Composable
 fun WearTimerScreen(
-    viewModel: TimerViewModel,
-    metricsViewModel: MetricsViewModel,
+    isAmbient: Boolean,
     onDone: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsState()
+    // The workout itself runs in WorkoutSession and WorkoutService, which
+    // also play the cues. This screen only shows it and passes on taps.
+    val state by WorkoutSession.state.collectAsState()
+    val live by WorkoutSession.live.collectAsState()
 
     val context = LocalContext.current
-    val settingsRepository = remember { WatchSettingsRepository(context) }
+    val settingsRepository = remember { WatchSettingsRepository(context.applicationContext) }
     val settings by settingsRepository.settings.collectAsState(initial = WatchSettings())
 
-    // The engine announces cue moments; the watch answers with vibration
-    // and beeps, according to the settings.
-    val haptics = remember { HapticsPlayer(context) }
-    val soundPlayer = remember(settings.cues.soundEnabled, settings.cues.soundLevel) {
-        if (settings.cues.soundEnabled) SoundPlayer(settings.cues.soundVolumePercent) else null
-    }
-    DisposableEffect(soundPlayer) {
-        onDispose { soundPlayer?.release() }
-    }
-    LaunchedEffect(viewModel, settings) {
-        viewModel.cues.collect { cue ->
-            if (settings.cues.vibrationEnabled) {
-                haptics.play(cue, settings.cues.vibrationLevel)
-            }
-            when (cue) {
-                TimerCue.COUNTDOWN_TICK -> soundPlayer?.countdownTick()
-                TimerCue.WORK_START -> soundPlayer?.workStart()
-                TimerCue.REST_START -> soundPlayer?.restStart()
-                TimerCue.FINISH -> soundPlayer?.finish()
-            }
-        }
-    }
-    if (settings.keepScreenOn) {
+    if (settings.keepScreenOn && state.phase != TimerPhase.FINISHED) {
         KeepScreenOn()
-    }
-
-    // Health data needs the user's permission. If they say no, the timer
-    // still works — the workout just has no heart rate or steps.
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-        metricsViewModel.startRecording()
-    }
-    LaunchedEffect(Unit) {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.BODY_SENSORS,
-                Manifest.permission.ACTIVITY_RECOGNITION,
-            )
-        )
-    }
-    // Start recording with the lead-in; stop and send to phone when finished.
-    LaunchedEffect(state.phase) {
-        when (state.phase) {
-            TimerPhase.LEAD_IN, TimerPhase.RUNNING -> metricsViewModel.startRecording()
-            TimerPhase.FINISHED -> metricsViewModel.finishAndPublish(state)
-        }
-    }
-    LaunchedEffect(state.isPaused) {
-        if (state.phase != TimerPhase.FINISHED) metricsViewModel.setPaused(state.isPaused)
     }
 
     if (state.intervals.isEmpty()) return
 
-    if (state.phase == TimerPhase.FINISHED) {
-        FinishedContent(state = state, metricsViewModel = metricsViewModel, onDone = onDone)
-    } else {
-        RunningContent(state = state, viewModel = viewModel, metricsViewModel = metricsViewModel)
+    when {
+        state.phase == TimerPhase.FINISHED ->
+            FinishedContent(state = state, live = live, onDone = onDone)
+        isAmbient -> AmbientContent(state = state)
+        else -> RunningContent(state = state, live = live)
+    }
+}
+
+/**
+ * The dimmed, low-power version: mostly black, no color fills, no buttons.
+ * It shows just enough to check progress with a glance at the wrist.
+ */
+@Composable
+private fun AmbientContent(state: TimerUiState) {
+    val ringProgress =
+        (state.remainingMillis.toFloat() / state.currentDurationMillis).coerceIn(0f, 1f)
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        CircularProgressIndicator(
+            progress = ringProgress,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(3.dp),
+            indicatorColor = Color.Gray,
+            trackColor = Color.DarkGray.copy(alpha = 0.4f),
+            strokeWidth = 2.dp,
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = phaseLabel(state).uppercase(),
+                style = MaterialTheme.typography.caption2.copy(letterSpacing = 1.5.sp),
+                color = Color.Gray,
+            )
+            Text(
+                text = displayTime(state.remainingSeconds),
+                style = TextStyle(
+                    fontSize = 46.sp,
+                    fontWeight = FontWeight.Light,
+                    fontFeatureSettings = "tnum",
+                ),
+                color = Color.LightGray,
+            )
+            Text(
+                text = when (state.phase) {
+                    TimerPhase.LEAD_IN -> "${state.intervals.size} intervals"
+                    else -> "${state.currentIndex + 1} of ${state.intervals.size}"
+                },
+                style = MaterialTheme.typography.caption1,
+                color = Color.Gray,
+            )
+        }
     }
 }
 
 @Composable
 private fun RunningContent(
     state: TimerUiState,
-    viewModel: TimerViewModel,
-    metricsViewModel: MetricsViewModel,
+    live: LiveMetrics,
 ) {
     val accent by animateColorAsState(
         targetValue = when {
@@ -148,7 +147,6 @@ private fun RunningContent(
     )
     val ringProgress =
         (state.remainingMillis.toFloat() / state.currentDurationMillis).coerceIn(0f, 1f)
-    val live by metricsViewModel.live.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         CircularProgressIndicator(
@@ -194,7 +192,7 @@ private fun RunningContent(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = viewModel::togglePause,
+                    onClick = WorkoutSession::togglePause,
                     colors = ButtonDefaults.secondaryButtonColors(),
                     modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
                 ) {
@@ -205,7 +203,7 @@ private fun RunningContent(
                     )
                 }
                 Button(
-                    onClick = viewModel::skip,
+                    onClick = WorkoutSession::skip,
                     colors = ButtonDefaults.secondaryButtonColors(),
                     modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
                 ) {
@@ -216,7 +214,7 @@ private fun RunningContent(
                     )
                 }
                 Button(
-                    onClick = viewModel::endEarly,
+                    onClick = WorkoutSession::endEarly,
                     colors = ButtonDefaults.secondaryButtonColors(),
                     modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
                 ) {
@@ -252,10 +250,9 @@ private fun RunningContent(
 @Composable
 private fun FinishedContent(
     state: TimerUiState,
-    metricsViewModel: MetricsViewModel,
+    live: LiveMetrics,
     onDone: () -> Unit,
 ) {
-    val live by metricsViewModel.live.collectAsState()
 
     Column(
         modifier = Modifier

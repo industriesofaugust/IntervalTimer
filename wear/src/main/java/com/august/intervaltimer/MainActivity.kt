@@ -1,8 +1,11 @@
 package com.august.intervaltimer
 
+import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -11,18 +14,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.august.intervaltimer.metrics.MetricsViewModel
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.settings.WatchSettingsRepository
 import com.august.intervaltimer.sync.RecentTemplate
 import com.august.intervaltimer.sync.publishWatchCues
 import com.august.intervaltimer.sync.toSyncedIntervals
-import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.CreateScreen
 import com.august.intervaltimer.ui.CustomScreen
 import com.august.intervaltimer.ui.PreviewScreen
@@ -31,23 +32,50 @@ import com.august.intervaltimer.ui.TemplateListScreen
 import com.august.intervaltimer.ui.WatchSettingsScreen
 import com.august.intervaltimer.ui.WearColors
 import com.august.intervaltimer.ui.WearTimerScreen
+import com.august.intervaltimer.workout.WorkoutSession
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+
+    // Ambient is the watch's dimmed, low-power screen state.
+    private var isAmbient by mutableStateOf(false)
+
+    private val ambientCallback = object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+        override fun onEnterAmbient(ambientDetails: AmbientLifecycleObserver.AmbientDetails) {
+            isAmbient = true
+            WorkoutSession.setSmoothTicks(false)
+        }
+
+        override fun onExitAmbient() {
+            isAmbient = false
+            WorkoutSession.setSmoothTicks(true)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WorkoutSession.init(this)
+        lifecycle.addObserver(AmbientLifecycleObserver(this, ambientCallback))
         setContent {
-            WearApp()
+            WearApp(isAmbient = isAmbient)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        WorkoutSession.setSmoothTicks(!isAmbient)
+    }
+
+    override fun onPause() {
+        WorkoutSession.setSmoothTicks(false)
+        super.onPause()
     }
 }
 
 @Composable
-fun WearApp() {
+fun WearApp(isAmbient: Boolean) {
     val navController = rememberSwipeDismissableNavController()
-    val timerViewModel: TimerViewModel = viewModel()
-    val metricsViewModel: MetricsViewModel = viewModel()
 
     // The workout the user is looking at in the preview screen.
     var pendingName by remember { mutableStateOf("") }
@@ -63,13 +91,36 @@ fun WearApp() {
         publishWatchCues(context.applicationContext, settingsRepository.settings.first().cues)
     }
 
-    val startWorkout: (String, List<Interval>) -> Unit = { name, intervals ->
-        scope.launch {
-            settingsRepository.addRecent(RecentTemplate(name, intervals.toSyncedIntervals()))
+    // Opening the app while a workout is running goes straight to the timer.
+    LaunchedEffect(Unit) {
+        if (WorkoutSession.inProgress) navController.navigate("timer")
+    }
+
+    // Permissions are asked before the workout starts, because the service
+    // that keeps the timer alive needs to know whether sensors are allowed.
+    // Saying no still runs the timer, just without heart rate or steps.
+    var queuedStart by remember { mutableStateOf<Pair<String, List<Interval>>?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        queuedStart?.let { (name, intervals) ->
+            scope.launch {
+                settingsRepository.addRecent(RecentTemplate(name, intervals.toSyncedIntervals()))
+            }
+            WorkoutSession.start(context, name, intervals)
+            navController.navigate("timer")
         }
-        metricsViewModel.prepareNew(name)
-        timerViewModel.start(intervals)
-        navController.navigate("timer")
+        queuedStart = null
+    }
+    val startWorkout: (String, List<Interval>) -> Unit = { name, intervals ->
+        queuedStart = name to intervals
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.BODY_SENSORS,
+                Manifest.permission.ACTIVITY_RECOGNITION,
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        )
     }
 
     MaterialTheme(colors = WearColors) {
@@ -79,7 +130,6 @@ fun WearApp() {
         ) {
             composable("templates") {
                 TemplateListScreen(
-                    timerViewModel = timerViewModel,
                     onSelect = { name, intervals ->
                         pendingName = name
                         pendingIntervals = intervals
@@ -125,10 +175,9 @@ fun WearApp() {
             }
             composable("timer") {
                 WearTimerScreen(
-                    viewModel = timerViewModel,
-                    metricsViewModel = metricsViewModel,
+                    isAmbient = isAmbient,
                     onDone = {
-                        timerViewModel.stop()
+                        WorkoutSession.clear()
                         navController.popBackStack()
                     },
                 )

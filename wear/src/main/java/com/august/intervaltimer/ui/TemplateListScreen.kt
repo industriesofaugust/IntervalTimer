@@ -35,7 +35,7 @@ import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
 import com.august.intervaltimer.sync.toIntervals
 import com.august.intervaltimer.timer.TimerPhase
-import com.august.intervaltimer.timer.TimerViewModel
+import com.august.intervaltimer.workout.WorkoutSession
 
 /** Built-in workouts, always available even before the first sync. */
 data class BuiltInTemplate(val name: String, val intervals: List<Interval>)
@@ -48,7 +48,6 @@ val builtInTemplates = listOf(
 
 @Composable
 fun TemplateListScreen(
-    timerViewModel: TimerViewModel,
     onSelect: (String, List<Interval>) -> Unit,
     onResume: () -> Unit,
     onCreate: () -> Unit,
@@ -56,7 +55,7 @@ fun TemplateListScreen(
     onStarters: () -> Unit,
     onCustom: () -> Unit,
 ) {
-    val state by timerViewModel.uiState.collectAsState()
+    val state by WorkoutSession.state.collectAsState()
     // Protects against an accidental swipe-away mid-workout.
     val inProgress = state.intervals.isNotEmpty() && state.phase != TimerPhase.FINISHED
 

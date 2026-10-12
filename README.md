@@ -3,7 +3,7 @@
 A workout interval timer for Android (phone) with a Wear OS companion app planned.
 Phone = build and review sessions; watch = run them.
 
-## Current status: v0.8
+## Current status: v0.9
 
 Three modules:
 - `app` — the phone app, three pages behind a bottom bar:
@@ -35,6 +35,10 @@ Design language everywhere: coral = work, teal = rest, amber = get ready.
 - [x] Phase 6 — history, HR chart, Health Connect
 - [x] v0.7 — watch settings/preview/create + stronger haptics; phone edit
   mode + three-page layout with bottom navigation
+- [x] v0.9 — watch timer runs in a foreground service (keeps counting and
+  cueing with the screen off), watch-face icon to return to a workout,
+  dim ambient screen; package renamed to com.august.intervaltimer; seven
+  review bugs fixed
 - [x] v0.8 — precise time wheels, editor keyboard fix, drag-to-reorder and
   trash, watch home redesign, watch level-bar settings, end-early button,
   phone-side watch cue controls

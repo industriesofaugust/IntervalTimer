@@ -14,8 +14,8 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 30
         targetSdk = 34
-        versionCode = 9
-        versionName = "0.8.1"
+        versionCode = 10
+        versionName = "0.9"
     }
 
     buildTypes {
@@ -50,6 +50,8 @@ dependencies {
     implementation(libs.androidx.wear.compose.material)
     implementation(libs.androidx.wear.compose.foundation)
     implementation(libs.androidx.wear.compose.navigation)
+    implementation(libs.androidx.wear)
+    implementation(libs.androidx.wear.ongoing)
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.androidx.health.services)

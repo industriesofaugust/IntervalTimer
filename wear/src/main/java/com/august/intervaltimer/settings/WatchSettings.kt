@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.map
 
 data class WatchSettings(
     val cues: WatchCueSettings = WatchCueSettings(),
-    val keepScreenOn: Boolean = true,
+    val keepScreenOn: Boolean = false,
     val recents: List<RecentTemplate> = emptyList(),
 )
 
@@ -56,7 +56,7 @@ class WatchSettingsRepository(private val context: Context) {
                         else -> 5
                     },
             ),
-            keepScreenOn = prefs[Keys.keepScreenOn] ?: true,
+            keepScreenOn = prefs[Keys.keepScreenOn] ?: false,
             recents = prefs[Keys.recents]?.let { RecentTemplatesCodec.decode(it) } ?: emptyList(),
         )
     }
