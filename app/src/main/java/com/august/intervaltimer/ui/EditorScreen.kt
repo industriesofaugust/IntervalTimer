@@ -2,7 +2,7 @@ package com.august.intervaltimer.ui
 
 import android.app.Application
 import androidx.compose.foundation.clickable
-import com.august.intervaltimer.ui.theme.isAppInDarkTheme
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,14 +20,14 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
@@ -48,7 +49,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -64,6 +70,7 @@ import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
 import com.august.intervaltimer.ui.theme.Teal
 import com.august.intervaltimer.ui.theme.TealLight
+import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import kotlinx.coroutines.launch
 
 data class EditorRow(
@@ -147,6 +154,13 @@ class EditorViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
         if (rows.size > 1) rows.removeAll { it.key == key }
     }
 
+    /** Inserts a copy of an interval directly below it. */
+    fun duplicateRow(key: Long) {
+        val index = rows.indexOfFirst { it.key == key }
+        if (index < 0) return
+        rows.add(index + 1, rows[index].copy(key = nextKey++))
+    }
+
     fun moveRow(key: Long, delta: Int) {
         val from = rows.indexOfFirst { it.key == key }
         val to = from + delta
@@ -155,18 +169,32 @@ class EditorViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
         rows.add(to, row)
     }
 
+    private fun currentIntervals(): List<Interval> = rows.map {
+        Interval(
+            name = it.name.ifBlank { if (it.type == IntervalType.WORK) "Work" else "Rest" },
+            type = it.type,
+            durationSeconds = it.durationSeconds,
+        )
+    }
+
     fun save(onSaved: () -> Unit) {
         viewModelScope.launch {
             repository.saveTemplate(
                 id = templateId,
                 name = name.ifBlank { "Workout" },
-                intervals = rows.map {
-                    Interval(
-                        name = it.name.ifBlank { if (it.type == IntervalType.WORK) "Work" else "Rest" },
-                        type = it.type,
-                        durationSeconds = it.durationSeconds,
-                    )
-                },
+                intervals = currentIntervals(),
+            )
+            onSaved()
+        }
+    }
+
+    /** Saves what's on screen as a new template, leaving the original as it was. */
+    fun saveAsCopy(onSaved: () -> Unit) {
+        viewModelScope.launch {
+            repository.saveTemplate(
+                id = 0,
+                name = "${name.ifBlank { "Workout" }} copy",
+                intervals = currentIntervals(),
             )
             onSaved()
         }
@@ -192,6 +220,13 @@ fun EditorScreen(
     // the space the keyboard didn't take.
     val imeVisible = WindowInsets.isImeVisible
     var durationPickerKey by remember { mutableStateOf<Long?>(null) }
+
+    // Drag-to-reorder: the card being dragged follows the finger, and swaps
+    // places with a neighbor once it has moved most of the way past it.
+    var draggingKey by remember { mutableStateOf<Long?>(null) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var cardHeightPx by remember { mutableFloatStateOf(0f) }
+    val gapPx = with(LocalDensity.current) { 10.dp.toPx() }
 
     Column(
         modifier = Modifier
@@ -222,15 +257,50 @@ fun EditorScreen(
             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            itemsIndexed(viewModel.rows, key = { _, row -> row.key }) { index, row ->
+            items(viewModel.rows, key = { row -> row.key }) { row ->
+                val isDragging = draggingKey == row.key
                 IntervalEditorCard(
                     row = row,
-                    canMoveUp = index > 0,
-                    canMoveDown = index < viewModel.rows.lastIndex,
                     canDelete = viewModel.rows.size > 1,
+                    highlighted = isDragging,
                     viewModel = viewModel,
                     onDurationClick = { durationPickerKey = row.key },
-                    modifier = Modifier.animateItem(),
+                    dragHandleModifier = Modifier.pointerInput(row.key) {
+                        detectDragGestures(
+                            onDragStart = {
+                                draggingKey = row.key
+                                dragOffsetY = 0f
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffsetY += amount.y
+                                val slot = cardHeightPx + gapPx
+                                val index = viewModel.rows.indexOfFirst { it.key == row.key }
+                                if (slot > 0f && index >= 0) {
+                                    if (dragOffsetY > slot * 0.6f && index < viewModel.rows.lastIndex) {
+                                        viewModel.moveRow(row.key, +1)
+                                        dragOffsetY -= slot
+                                    } else if (dragOffsetY < -slot * 0.6f && index > 0) {
+                                        viewModel.moveRow(row.key, -1)
+                                        dragOffsetY += slot
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                draggingKey = null
+                                dragOffsetY = 0f
+                            },
+                            onDragCancel = {
+                                draggingKey = null
+                                dragOffsetY = 0f
+                            },
+                        )
+                    },
+                    modifier = Modifier
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f }
+                        .onSizeChanged { cardHeightPx = it.height.toFloat() }
+                        .then(if (isDragging) Modifier else Modifier.animateItem()),
                 )
             }
             item {
@@ -276,7 +346,10 @@ fun EditorScreen(
                     TextButton(onClick = { viewModel.delete(onDeleted = onSaved) }) {
                         Text("Delete", color = MaterialTheme.colorScheme.error)
                     }
-                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { viewModel.saveAsCopy(onSaved = onSaved) }) {
+                        Text("Save copy")
+                    }
+                    Spacer(Modifier.width(4.dp))
                 }
                 Button(
                     onClick = { viewModel.save(onSaved = onSaved) },
@@ -307,11 +380,11 @@ fun EditorScreen(
 @Composable
 private fun IntervalEditorCard(
     row: EditorRow,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
     canDelete: Boolean,
+    highlighted: Boolean,
     viewModel: EditorViewModel,
     onDurationClick: () -> Unit,
+    dragHandleModifier: Modifier,
     modifier: Modifier = Modifier,
 ) {
     val dark = isAppInDarkTheme()
@@ -323,6 +396,7 @@ private fun IntervalEditorCard(
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = if (highlighted) 8.dp else 0.dp,
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(
@@ -339,18 +413,10 @@ private fun IntervalEditorCard(
                 )
                 Spacer(Modifier.width(4.dp))
                 IconButton(
-                    onClick = { viewModel.moveRow(row.key, -1) },
-                    enabled = canMoveUp,
+                    onClick = { viewModel.duplicateRow(row.key) },
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move up")
-                }
-                IconButton(
-                    onClick = { viewModel.moveRow(row.key, +1) },
-                    enabled = canMoveDown,
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move down")
+                    Icon(Icons.Filled.ContentCopy, contentDescription = "Duplicate interval")
                 }
                 IconButton(
                     onClick = { viewModel.removeRow(row.key) },
@@ -359,6 +425,15 @@ private fun IntervalEditorCard(
                 ) {
                     Icon(Icons.Filled.Delete, contentDescription = "Delete interval")
                 }
+                // Press and drag this handle to move the interval.
+                Icon(
+                    Icons.Filled.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = dragHandleModifier
+                        .size(36.dp)
+                        .padding(6.dp),
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(

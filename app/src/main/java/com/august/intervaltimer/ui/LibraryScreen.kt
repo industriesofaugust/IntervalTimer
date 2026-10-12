@@ -75,7 +75,7 @@ fun LibraryScreen(
     onQuickSession: () -> Unit,
     onNewTemplate: () -> Unit,
     onEditTemplate: (Long) -> Unit,
-    onPlayTemplate: (List<Interval>) -> Unit,
+    onPlayTemplate: (String, List<Interval>) -> Unit,
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val templates by viewModel.templates.collectAsState()
@@ -294,7 +294,7 @@ private fun <T> List<T>.swap(a: Int, b: Int): List<T> {
 private fun TemplateCard(
     template: TemplateWithIntervals,
     onEdit: () -> Unit,
-    onPlay: (List<Interval>) -> Unit,
+    onPlay: (String, List<Interval>) -> Unit,
     highlighted: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -327,7 +327,7 @@ private fun TemplateCard(
             FilledIconButton(
                 onClick = {
                     val intervals = template.toDomainIntervals()
-                    if (intervals.isNotEmpty()) onPlay(intervals)
+                    if (intervals.isNotEmpty()) onPlay(template.template.name, intervals)
                 },
             ) {
                 Icon(

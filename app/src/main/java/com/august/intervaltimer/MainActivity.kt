@@ -20,6 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -80,6 +83,8 @@ fun IntervalTimerApp() {
     // One timer for the whole app: whichever screen starts a session hands
     // its intervals to this ViewModel, then navigates to the timer screen.
     val timerViewModel: TimerViewModel = viewModel()
+    // Name of the workout being run, saved with it in History.
+    var sessionName by rememberSaveable { mutableStateOf<String?>(null) }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -115,7 +120,8 @@ fun IntervalTimerApp() {
                         onQuickSession = { navController.navigate("quickbuild") },
                         onNewTemplate = { navController.navigate("editor") },
                         onEditTemplate = { id -> navController.navigate("editor?templateId=$id") },
-                        onPlayTemplate = { intervals ->
+                        onPlayTemplate = { name, intervals ->
+                            sessionName = name
                             timerViewModel.start(intervals)
                             navController.navigate("timer")
                         },
@@ -132,6 +138,7 @@ fun IntervalTimerApp() {
                 composable("quickbuild") {
                     QuickBuildScreen(
                         onStart = { intervals ->
+                            sessionName = "Quick session"
                             timerViewModel.start(intervals)
                             navController.navigate("timer")
                         },
@@ -169,6 +176,7 @@ fun IntervalTimerApp() {
                 composable("timer") {
                     TimerScreen(
                         viewModel = timerViewModel,
+                        sessionName = sessionName,
                         onExit = { navController.popBackStack() },
                     )
                 }

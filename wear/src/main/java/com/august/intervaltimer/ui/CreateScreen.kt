@@ -1,6 +1,16 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.draw.clip
+import androidx.wear.compose.material.CompactChip
+import androidx.wear.compose.material.Picker
+import androidx.wear.compose.material.rememberPickerState
+import com.august.intervaltimer.model.MAX_INTERVAL_SECONDS
+import com.august.intervaltimer.model.MIN_INTERVAL_SECONDS
+import com.august.intervaltimer.model.stepDuration
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,6 +93,20 @@ fun CreateScreen(
 
     fun intervals() = buildSession(QuickBuildConfig(rounds, workSeconds, restSeconds))
 
+    // Which duration the wheels are editing: "work", "rest", or null.
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
+    editing?.let { target ->
+        DurationWheels(
+            title = if (target == "work") "Work" else "Rest",
+            initialSeconds = if (target == "work") workSeconds else restSeconds,
+            onConfirm = { seconds ->
+                if (target == "work") workSeconds = seconds else restSeconds = seconds
+                editing = null
+            },
+        )
+        return
+    }
+
     Scaffold(timeText = { TimeText() }) {
         ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
             item { ListHeader { Text("New workout") } }
@@ -98,16 +122,18 @@ fun CreateScreen(
                 ValueStepper(
                     label = "Work",
                     value = formatDuration(workSeconds),
-                    onDecrease = { workSeconds = (workSeconds - 5).coerceAtLeast(5) },
-                    onIncrease = { workSeconds = (workSeconds + 5).coerceAtMost(600) },
+                    onDecrease = { workSeconds = stepDuration(workSeconds, -5) },
+                    onIncrease = { workSeconds = stepDuration(workSeconds, 5) },
+                    onValueClick = { editing = "work" },
                 )
             }
             item {
                 ValueStepper(
                     label = "Rest",
                     value = formatDuration(restSeconds),
-                    onDecrease = { restSeconds = (restSeconds - 5).coerceAtLeast(5) },
-                    onIncrease = { restSeconds = (restSeconds + 5).coerceAtMost(600) },
+                    onDecrease = { restSeconds = stepDuration(restSeconds, -5) },
+                    onIncrease = { restSeconds = stepDuration(restSeconds, 5) },
+                    onValueClick = { editing = "rest" },
                 )
             }
             item {
@@ -152,6 +178,7 @@ private fun ValueStepper(
     value: String,
     onDecrease: () -> Unit,
     onIncrease: () -> Unit,
+    onValueClick: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -168,7 +195,10 @@ private fun ValueStepper(
         }
         Spacer(Modifier.width(8.dp))
         androidx.compose.foundation.layout.Column(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = onValueClick != null) { onValueClick?.invoke() },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -190,5 +220,66 @@ private fun ValueStepper(
         ) {
             Icon(Icons.Filled.Add, contentDescription = "More", modifier = Modifier.size(18.dp))
         }
+    }
+}
+
+/**
+ * Two scrolling wheels, minutes and seconds, for setting an exact duration
+ * such as 0:07. Tapping a wheel selects it for the crown or a swipe.
+ */
+@Composable
+private fun DurationWheels(
+    title: String,
+    initialSeconds: Int,
+    onConfirm: (Int) -> Unit,
+) {
+    val minutes = rememberPickerState(
+        initialNumberOfOptions = 60,
+        initiallySelectedOption = (initialSeconds / 60).coerceIn(0, 59),
+    )
+    val seconds = rememberPickerState(
+        initialNumberOfOptions = 60,
+        initiallySelectedOption = initialSeconds % 60,
+    )
+
+    androidx.compose.foundation.layout.Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.caption1,
+            color = MaterialTheme.colors.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Picker(
+                state = minutes,
+                contentDescription = "Minutes",
+                modifier = Modifier.size(width = 56.dp, height = 96.dp),
+            ) { option ->
+                Text(text = "%02d".format(option), style = MaterialTheme.typography.display3)
+            }
+            Text(
+                text = ":",
+                style = MaterialTheme.typography.display3,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+            Picker(
+                state = seconds,
+                contentDescription = "Seconds",
+                modifier = Modifier.size(width = 56.dp, height = 96.dp),
+            ) { option ->
+                Text(text = "%02d".format(option), style = MaterialTheme.typography.display3)
+            }
+        }
+        CompactChip(
+            onClick = {
+                val total = minutes.selectedOption * 60 + seconds.selectedOption
+                onConfirm(total.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS))
+            },
+            label = { Text("Set") },
+            colors = ChipDefaults.primaryChipColors(),
+        )
     }
 }

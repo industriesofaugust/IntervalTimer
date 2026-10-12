@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -149,6 +150,7 @@ private fun RunningContent(
         (state.remainingMillis.toFloat() / state.currentDurationMillis).coerceIn(0f, 1f)
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Outer ring: time left in this interval.
         CircularProgressIndicator(
             progress = ringProgress,
             modifier = Modifier
@@ -158,22 +160,36 @@ private fun RunningContent(
             trackColor = accent.copy(alpha = 0.15f),
             strokeWidth = 5.dp,
         )
+        // Inner thin ring: how far through the whole session.
+        CircularProgressIndicator(
+            progress = state.sessionProgress,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(11.dp),
+            indicatorColor = MaterialTheme.colors.onSurfaceVariant,
+            trackColor = MaterialTheme.colors.onSurfaceVariant.copy(alpha = 0.12f),
+            strokeWidth = 2.dp,
+        )
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 22.dp),
+                .padding(horizontal = 26.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = phaseLabel(state).uppercase(),
-                style = MaterialTheme.typography.caption2.copy(letterSpacing = 1.5.sp),
+                text = when (state.phase) {
+                    TimerPhase.LEAD_IN -> phaseLabel(state).uppercase()
+                    else -> "${phaseLabel(state).uppercase()} · " +
+                        "${state.currentIndex + 1}/${state.intervals.size}"
+                },
+                style = MaterialTheme.typography.caption2.copy(letterSpacing = 1.sp),
                 color = accent,
             )
             Text(
                 text = displayTime(state.remainingSeconds),
                 style = TextStyle(
-                    fontSize = 46.sp,
+                    fontSize = 42.sp,
                     fontWeight = FontWeight.Light,
                     fontFeatureSettings = "tnum",
                 ),
@@ -185,49 +201,43 @@ private fun RunningContent(
                     else -> state.currentInterval?.name.orEmpty()
                 },
                 style = MaterialTheme.typography.caption1,
+                color = MaterialTheme.colors.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val next = state.nextInterval
+            Text(
+                text = if (next != null) {
+                    "Next: ${next.name} ${formatDuration(next.durationSeconds)}"
+                } else {
+                    "Last one"
+                },
+                style = MaterialTheme.typography.caption3,
                 color = MaterialTheme.colors.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TimerButton(
+                    icon = if (state.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    description = if (state.isPaused) "Resume" else "Pause",
                     onClick = WorkoutSession::togglePause,
-                    colors = ButtonDefaults.secondaryButtonColors(),
-                    modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
-                ) {
-                    Icon(
-                        imageVector = if (state.isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        contentDescription = if (state.isPaused) "Resume" else "Pause",
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Button(
+                )
+                TimerButton(
+                    icon = Icons.Filled.SkipNext,
+                    description = "Skip interval",
                     onClick = WorkoutSession::skip,
-                    colors = ButtonDefaults.secondaryButtonColors(),
-                    modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SkipNext,
-                        contentDescription = "Skip interval",
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Button(
+                )
+                TimerButton(
+                    icon = Icons.Filled.Stop,
+                    description = "End workout",
                     onClick = WorkoutSession::endEarly,
-                    colors = ButtonDefaults.secondaryButtonColors(),
-                    modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Stop,
-                        contentDescription = "End workout",
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+                )
             }
             val heartRate = live.currentHeartRate
             if (heartRate != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Filled.Favorite,
@@ -247,6 +257,26 @@ private fun RunningContent(
     }
 }
 
+/** Sized so three fit side by side inside the round screen. */
+@Composable
+private fun TimerButton(
+    icon: ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.secondaryButtonColors(),
+        modifier = Modifier.size(40.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
 @Composable
 private fun FinishedContent(
     state: TimerUiState,
@@ -263,7 +293,8 @@ private fun FinishedContent(
     ) {
         Text(
             text = if (state.endedEarly) "Session ended" else "Nice work",
-            style = MaterialTheme.typography.title1,
+            style = MaterialTheme.typography.title2,
+            maxLines = 1,
         )
         Spacer(Modifier.height(4.dp))
         Text(

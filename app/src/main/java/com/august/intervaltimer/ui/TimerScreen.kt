@@ -28,7 +28,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -41,6 +44,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
+import com.august.intervaltimer.data.recordPhoneWorkout
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.timer.SoundPlayer
@@ -56,7 +60,7 @@ import com.august.intervaltimer.ui.theme.Teal
 import com.august.intervaltimer.ui.theme.TealLight
 
 @Composable
-fun TimerScreen(viewModel: TimerViewModel, onExit: () -> Unit) {
+fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
 
     // The engine announces cue moments; on the phone we answer with beeps,
@@ -77,6 +81,15 @@ fun TimerScreen(viewModel: TimerViewModel, onExit: () -> Unit) {
                 TimerCue.REST_START -> soundPlayer?.restStart()
                 TimerCue.FINISH -> soundPlayer?.finish()
             }
+        }
+    }
+
+    // Save the workout to History once, when it finishes or is ended early.
+    var saved by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.phase) {
+        if (state.phase == TimerPhase.FINISHED && !saved && state.elapsedSecondsAtEnd > 0) {
+            saved = true
+            app.recordPhoneWorkout(sessionName, state)
         }
     }
 
@@ -181,8 +194,13 @@ private fun RunningContent(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
                 onClick = {
-                    viewModel.stop()
-                    onExit()
+                    if (state.phase == TimerPhase.LEAD_IN) {
+                        // Nothing has been done yet, so there is nothing to summarize.
+                        viewModel.stop()
+                        onExit()
+                    } else {
+                        viewModel.endEarly()
+                    }
                 },
                 modifier = Modifier
                     .weight(1f)
@@ -215,8 +233,11 @@ private fun RunningContent(
 
 @Composable
 private fun FinishedContent(state: TimerUiState, onDone: () -> Unit) {
-    val workIntervals = state.intervals.filter { it.type == IntervalType.WORK }
-    val totalSeconds = state.intervals.sumOf { it.durationSeconds }
+    // If the session was ended early, only count what was actually done.
+    val completed =
+        if (state.endedEarly) state.intervals.take(state.completedIntervals) else state.intervals
+    val workIntervals = completed.filter { it.type == IntervalType.WORK }
+    val totalSeconds = state.elapsedSecondsAtEnd
     val workSeconds = workIntervals.sumOf { it.durationSeconds }
 
     Column(
@@ -228,12 +249,16 @@ private fun FinishedContent(state: TimerUiState, onDone: () -> Unit) {
     ) {
         Spacer(Modifier.weight(1f))
         Text(
-            text = "Nice work",
+            text = if (state.endedEarly) "Session ended" else "Nice work",
             style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "Session complete",
+            text = if (state.endedEarly) {
+                "${state.completedIntervals} of ${state.intervals.size} intervals completed"
+            } else {
+                "Session complete"
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

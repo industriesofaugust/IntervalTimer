@@ -342,7 +342,7 @@ fun PhoneSettingsScreen(
         Spacer(Modifier.height(16.dp))
         SettingsSection(title = "About") {
             Text(
-                text = "Interval Timer 0.9",
+                text = "Interval Timer 0.10",
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(4.dp))
