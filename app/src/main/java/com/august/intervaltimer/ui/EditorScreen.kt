@@ -2,7 +2,7 @@ package com.august.intervaltimer.ui
 
 import android.app.Application
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -56,7 +56,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.model.MAX_INTERVAL_SECONDS
+import com.august.intervaltimer.model.MIN_INTERVAL_SECONDS
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.model.stepDuration
 import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
 import com.august.intervaltimer.ui.theme.Teal
@@ -126,12 +129,12 @@ class EditorViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
     }
 
     fun adjustRowDuration(key: Long, deltaSeconds: Int) = updateRow(key) {
-        it.copy(durationSeconds = (it.durationSeconds + deltaSeconds).coerceIn(5, 600))
+        it.copy(durationSeconds = stepDuration(it.durationSeconds, deltaSeconds))
     }
 
     /** From the wheel picker: any exact value, down to a single second. */
     fun setRowDuration(key: Long, seconds: Int) = updateRow(key) {
-        it.copy(durationSeconds = seconds.coerceIn(1, 3599))
+        it.copy(durationSeconds = seconds.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS))
     }
 
     fun addRow(type: IntervalType) {
@@ -311,7 +314,7 @@ private fun IntervalEditorCard(
     onDurationClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = isAppInDarkTheme()
     val accent = when (row.type) {
         IntervalType.WORK -> if (dark) CoralLight else Coral
         IntervalType.REST -> if (dark) TealLight else Teal

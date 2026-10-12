@@ -39,6 +39,7 @@ class WorkoutMetricsRecorder(context: Context) {
     private var totalSteps = 0L
     private var totalCalories = 0.0
     private var recording = false
+    private var isPaused = false
 
     private val _live = MutableStateFlow(LiveMetrics())
     val live: StateFlow<LiveMetrics> = _live.asStateFlow()
@@ -47,7 +48,10 @@ class WorkoutMetricsRecorder(context: Context) {
         override fun onExerciseUpdateReceived(update: ExerciseUpdate) {
             update.latestMetrics.getData(DataType.HEART_RATE_BPM).forEach { sample ->
                 heartRateSamples.add(sample.value)
-                val elapsed = (SystemClock.elapsedRealtime() - startedAtRealtime) / 1000
+                // Readings arrive in batches, so use the time each one was
+                // measured, not the time the batch was delivered.
+                val measuredAt = sample.timeDurationFromBoot.toMillis()
+                val elapsed = ((measuredAt - startedAtRealtime) / 1000).coerceAtLeast(0)
                 heartRateTimeline.add(HrSample(elapsed.toInt(), sample.value))
             }
             update.latestMetrics.getData(DataType.STEPS).forEach { delta ->
@@ -71,10 +75,20 @@ class WorkoutMetricsRecorder(context: Context) {
         override fun onAvailabilityChanged(dataType: DataType<*, *>, availability: Availability) {}
     }
 
-    /** Safe to call repeatedly; only the first successful call starts anything. */
     /** Everything gathered so far, timed from the start of recording. */
     fun heartRateSeries(): List<HrSample> = heartRateTimeline.toList()
 
+    /** Pauses or resumes sensor recording along with the timer. */
+    suspend fun setPaused(paused: Boolean) {
+        if (!recording || paused == isPaused) return
+        isPaused = paused
+        runCatching {
+            if (paused) exerciseClient.pauseExerciseAsync().await()
+            else exerciseClient.resumeExerciseAsync().await()
+        }
+    }
+
+    /** Safe to call repeatedly; only the first successful call starts anything. */
     suspend fun start() {
         if (recording) return
         heartRateSamples.clear()
@@ -92,6 +106,7 @@ class WorkoutMetricsRecorder(context: Context) {
                 .build()
             exerciseClient.startExerciseAsync(config).await()
             recording = true
+            isPaused = false
         }
     }
 

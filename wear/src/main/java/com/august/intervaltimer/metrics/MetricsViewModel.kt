@@ -39,6 +39,12 @@ class MetricsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { recorder.start() }
     }
 
+    /** Keeps paused time out of the heart rate, step, and calorie totals. */
+    fun setPaused(paused: Boolean) {
+        if (!sessionActive) return
+        viewModelScope.launch { recorder.setPaused(paused) }
+    }
+
     fun finishAndPublish(state: TimerUiState) {
         if (!sessionActive) return
         sessionActive = false

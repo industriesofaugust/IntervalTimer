@@ -1,7 +1,7 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -68,7 +68,7 @@ fun WorkoutDetailScreen(
 ) {
     val result = viewModel.result ?: return
     val series = result.hrSeries()
-    val accent = if (isSystemInDarkTheme()) CoralLight else Coral
+    val accent = if (isAppInDarkTheme()) CoralLight else Coral
 
     Column(
         modifier = Modifier

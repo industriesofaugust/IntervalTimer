@@ -14,8 +14,8 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 30
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.8"
+        versionCode = 9
+        versionName = "0.8.1"
     }
 
     buildTypes {

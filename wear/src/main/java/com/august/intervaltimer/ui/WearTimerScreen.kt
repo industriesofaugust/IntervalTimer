@@ -118,6 +118,9 @@ fun WearTimerScreen(
             TimerPhase.FINISHED -> metricsViewModel.finishAndPublish(state)
         }
     }
+    LaunchedEffect(state.isPaused) {
+        if (state.phase != TimerPhase.FINISHED) metricsViewModel.setPaused(state.isPaused)
+    }
 
     if (state.intervals.isEmpty()) return
 

@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +20,7 @@ import com.august.intervaltimer.metrics.MetricsViewModel
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.settings.WatchSettingsRepository
 import com.august.intervaltimer.sync.RecentTemplate
+import com.august.intervaltimer.sync.publishWatchCues
 import com.august.intervaltimer.sync.toSyncedIntervals
 import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.CreateScreen
@@ -29,6 +31,7 @@ import com.august.intervaltimer.ui.TemplateListScreen
 import com.august.intervaltimer.ui.WatchSettingsScreen
 import com.august.intervaltimer.ui.WearColors
 import com.august.intervaltimer.ui.WearTimerScreen
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -53,6 +56,12 @@ fun WearApp() {
     val context = LocalContext.current
     val settingsRepository = remember { WatchSettingsRepository(context.applicationContext) }
     val scope = rememberCoroutineScope()
+
+    // Tell the phone what the watch's cue settings really are, so its
+    // Settings page never edits from stale defaults.
+    LaunchedEffect(Unit) {
+        publishWatchCues(context.applicationContext, settingsRepository.settings.first().cues)
+    }
 
     val startWorkout: (String, List<Interval>) -> Unit = { name, intervals ->
         scope.launch {

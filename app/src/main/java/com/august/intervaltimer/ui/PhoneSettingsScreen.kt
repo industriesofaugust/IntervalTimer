@@ -109,6 +109,13 @@ class WatchCuesViewModel(app: Application) :
     var cues by mutableStateOf(WatchCueSettings())
         private set
 
+    /**
+     * True once the watch's real settings have arrived. Until then the phone
+     * only has defaults, and saving those would overwrite the watch.
+     */
+    var loaded by mutableStateOf(false)
+        private set
+
     init {
         dataClient.addListener(this)
         viewModelScope.launch { loadCurrent() }
@@ -136,11 +143,15 @@ class WatchCuesViewModel(app: Application) :
         runCatching {
             val json = DataMapItem.fromDataItem(item)
                 .dataMap.getString(SyncPaths.WATCH_SETTINGS_KEY)
-            if (json != null) cues = WatchCueSettingsCodec.decode(json)
+            if (json != null) {
+                cues = WatchCueSettingsCodec.decode(json)
+                loaded = true
+            }
         }
     }
 
     fun update(transform: (WatchCueSettings) -> WatchCueSettings) {
+        if (!loaded) return
         cues = transform(cues)
         viewModelScope.launch {
             runCatching {
@@ -205,6 +216,13 @@ fun PhoneSettingsScreen(
         Spacer(Modifier.height(24.dp))
 
         SettingsSection(title = "Watch cues") {
+            if (!watchCues.loaded) {
+                Text(
+                    text = "Open Interval Timer on your watch once to load its settings here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
             ToggleRow(
                 title = "Vibration",
                 subtitle = "Buzzes for 3-2-1, work, rest, and finish",
@@ -237,6 +255,7 @@ fun PhoneSettingsScreen(
                         watchCues.update { it.copy(soundLevel = level) }
                     },
                 )
+            }
             }
             Spacer(Modifier.height(12.dp))
             OutlinedButton(
@@ -323,7 +342,7 @@ fun PhoneSettingsScreen(
         Spacer(Modifier.height(16.dp))
         SettingsSection(title = "About") {
             Text(
-                text = "Interval Timer 0.8",
+                text = "Interval Timer 0.8.1",
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(4.dp))

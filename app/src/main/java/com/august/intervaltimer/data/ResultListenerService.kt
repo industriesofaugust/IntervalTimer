@@ -10,6 +10,7 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import kotlinx.coroutines.runBlocking
 
@@ -27,11 +28,25 @@ class ResultListenerService : WearableListenerService() {
             val path = event.dataItem.uri.path ?: continue
             when {
                 path.startsWith(SyncPaths.RESULTS_PATH_PREFIX) ->
-                    runCatching { handleResult(event.dataItem) }
+                    runCatching {
+                        handleResult(event.dataItem)
+                        discard(event.dataItem)
+                    }
                 path.startsWith(SyncPaths.CREATE_TEMPLATE_PATH_PREFIX) ->
-                    runCatching { handleCreateTemplate(event.dataItem) }
+                    runCatching {
+                        handleCreateTemplate(event.dataItem)
+                        discard(event.dataItem)
+                    }
             }
         }
+    }
+
+    /**
+     * These are one-off messages, not shared state. Once handled, remove
+     * them so they don't pile up in the phone-watch sync storage.
+     */
+    private fun discard(item: DataItem) {
+        Wearable.getDataClient(this).deleteDataItems(item.uri)
     }
 
     private fun handleResult(item: DataItem) {

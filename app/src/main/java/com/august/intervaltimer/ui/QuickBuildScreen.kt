@@ -2,7 +2,7 @@ package com.august.intervaltimer.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,6 +41,7 @@ import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.QuickBuildConfig
 import com.august.intervaltimer.model.buildSession
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.model.stepDuration
 import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
 import com.august.intervaltimer.ui.theme.IntervalTimerTheme
@@ -59,7 +60,7 @@ fun QuickBuildScreen(
     var pickerTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
     val totalSeconds = rounds * workSeconds + (rounds - 1).coerceAtLeast(0) * restSeconds
-    val dark = isSystemInDarkTheme()
+    val dark = isAppInDarkTheme()
     val workAccent = if (dark) CoralLight else Coral
     val restAccent = if (dark) TealLight else Teal
 
@@ -95,8 +96,8 @@ fun QuickBuildScreen(
             label = "Work",
             value = formatDuration(workSeconds),
             dotColor = workAccent,
-            onDecrease = { workSeconds = (workSeconds - 5).coerceAtLeast(5) },
-            onIncrease = { workSeconds = (workSeconds + 5).coerceAtMost(600) },
+            onDecrease = { workSeconds = stepDuration(workSeconds, -5) },
+            onIncrease = { workSeconds = stepDuration(workSeconds, 5) },
             onValueClick = { pickerTarget = "work" },
         )
         Spacer(Modifier.height(12.dp))
@@ -104,8 +105,8 @@ fun QuickBuildScreen(
             label = "Rest",
             value = formatDuration(restSeconds),
             dotColor = restAccent,
-            onDecrease = { restSeconds = (restSeconds - 5).coerceAtLeast(5) },
-            onIncrease = { restSeconds = (restSeconds + 5).coerceAtMost(600) },
+            onDecrease = { restSeconds = stepDuration(restSeconds, -5) },
+            onIncrease = { restSeconds = stepDuration(restSeconds, 5) },
             onValueClick = { pickerTarget = "rest" },
         )
 

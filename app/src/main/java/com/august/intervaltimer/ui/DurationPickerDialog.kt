@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 
@@ -115,10 +116,11 @@ private fun NumberWheel(
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
     // The item resting in the middle row is the selected one.
-    val centeredIndex by remember {
+    val halfItemPx = with(LocalDensity.current) { itemHeight.toPx() } / 2f
+    val centeredIndex by remember(halfItemPx) {
         derivedStateOf {
             val offset = listState.firstVisibleItemScrollOffset
-            listState.firstVisibleItemIndex + if (offset > 60) 1 else 0
+            listState.firstVisibleItemIndex + if (offset > halfItemPx) 1 else 0
         }
     }
     LaunchedEffect(listState.isScrollInProgress) {

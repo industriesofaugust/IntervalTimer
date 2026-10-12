@@ -4,7 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -357,7 +357,7 @@ private fun phaseLabel(state: TimerUiState): String = when {
 
 @Composable
 private fun stateAccent(state: TimerUiState): Color {
-    val dark = isSystemInDarkTheme()
+    val dark = isAppInDarkTheme()
     return when {
         state.phase == TimerPhase.LEAD_IN -> if (dark) AmberLight else Amber
         state.currentInterval?.type == IntervalType.WORK -> if (dark) CoralLight else Coral

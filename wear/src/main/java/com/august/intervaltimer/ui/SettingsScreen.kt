@@ -41,23 +41,18 @@ import androidx.wear.compose.material.ToggleChip
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
-import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WatchCueSettings
-import com.august.intervaltimer.sync.WatchCueSettingsCodec
+import com.august.intervaltimer.sync.publishWatchCues
 import com.august.intervaltimer.sync.soundVolumePercent
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
-import com.google.android.gms.wearable.PutDataMapRequest
-import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = WatchSettingsRepository(app)
-    private val dataClient = Wearable.getDataClient(app)
     private val haptics = HapticsPlayer(app)
 
     val settings = repository.settings
@@ -89,7 +84,7 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val updated = transform(settings.value.cues)
             repository.setCues(updated)
-            publishToPhone(updated)
+            publishWatchCues(getApplication(), updated)
             // Let the user feel/hear what they just picked.
             if (previewVibration && updated.vibrationEnabled) {
                 haptics.play(TimerCue.WORK_START, updated.vibrationLevel)
@@ -100,22 +95,6 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
                 delay(600)
                 player.release()
             }
-        }
-    }
-
-    /** Mirrors settings to the Data Layer so the phone's Settings page stays in sync. */
-    private suspend fun publishToPhone(cues: WatchCueSettings) {
-        runCatching {
-            val request = PutDataMapRequest.create(SyncPaths.WATCH_SETTINGS_PATH)
-                .apply {
-                    dataMap.putString(
-                        SyncPaths.WATCH_SETTINGS_KEY,
-                        WatchCueSettingsCodec.encode(cues),
-                    )
-                }
-                .asPutDataRequest()
-                .setUrgent()
-            dataClient.putDataItem(request).await()
         }
     }
 }

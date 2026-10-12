@@ -8,6 +8,7 @@ import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -27,8 +28,11 @@ class PhoneListenerService : WearableListenerService() {
             when {
                 path == SyncPaths.WATCH_SETTINGS_PATH ->
                     runCatching { applySettings(event.dataItem) }
-                path.startsWith(SyncPaths.WATCH_TEST_PATH_PREFIX) ->
+                path.startsWith(SyncPaths.WATCH_TEST_PATH_PREFIX) -> {
+                    // A one-off request: remove it so these don't pile up.
+                    runCatching { Wearable.getDataClient(this).deleteDataItems(event.dataItem.uri) }
                     runCatching { playTestSequence() }
+                }
             }
         }
     }
