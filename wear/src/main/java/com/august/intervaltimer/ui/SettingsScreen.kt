@@ -30,6 +30,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.ListHeader
 import androidx.wear.compose.material.MaterialTheme
@@ -38,6 +40,7 @@ import androidx.wear.compose.material.Switch
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
+import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
@@ -76,6 +79,11 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.setKeepScreenOn(keepOn) }
     }
 
+    fun toggleStyle() {
+        val next = if (settings.value.style == AppStyle.DIAL) AppStyle.MINIMAL else AppStyle.DIAL
+        viewModelScope.launch { repository.setStyle(next) }
+    }
+
     private fun updateCues(
         previewVibration: Boolean = false,
         previewSound: Boolean = false,
@@ -107,6 +115,17 @@ fun WatchSettingsScreen(viewModel: WatchSettingsViewModel = viewModel()) {
     Scaffold(timeText = { TimeText() }) {
         ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
             item { ListHeader { Text("Settings") } }
+            item {
+                Chip(
+                    onClick = viewModel::toggleStyle,
+                    label = { Text("Style") },
+                    secondaryLabel = {
+                        Text(if (settings.style == AppStyle.DIAL) "Dial" else "Minimal")
+                    },
+                    colors = ChipDefaults.secondaryChipColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             item {
                 SettingToggle(
                     label = "Vibrate",

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.sync.RecentTemplate
 import com.august.intervaltimer.sync.RecentTemplatesCodec
 import com.august.intervaltimer.sync.WatchCueSettings
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.map
 data class WatchSettings(
     val cues: WatchCueSettings = WatchCueSettings(),
     val keepScreenOn: Boolean = false,
+    val style: AppStyle = AppStyle.DIAL,
     val recents: List<RecentTemplate> = emptyList(),
 )
 
@@ -29,6 +31,7 @@ class WatchSettingsRepository(private val context: Context) {
         val soundEnabled = booleanPreferencesKey("sound_enabled")
         val soundLevel = intPreferencesKey("sound_level_5")
         val keepScreenOn = booleanPreferencesKey("keep_screen_on")
+        val style = stringPreferencesKey("style")
         val recents = stringPreferencesKey("recent_templates")
 
         // Old v0.7 keys, read once so upgrades keep the user's choices.
@@ -57,6 +60,9 @@ class WatchSettingsRepository(private val context: Context) {
                     },
             ),
             keepScreenOn = prefs[Keys.keepScreenOn] ?: false,
+            style = prefs[Keys.style]
+                ?.let { runCatching { AppStyle.valueOf(it) }.getOrNull() }
+                ?: AppStyle.DIAL,
             recents = prefs[Keys.recents]?.let { RecentTemplatesCodec.decode(it) } ?: emptyList(),
         )
     }
@@ -68,6 +74,10 @@ class WatchSettingsRepository(private val context: Context) {
             it[Keys.soundEnabled] = cues.soundEnabled
             it[Keys.soundLevel] = cues.soundLevel.coerceIn(1, 5)
         }
+    }
+
+    suspend fun setStyle(style: AppStyle) {
+        context.dataStore.edit { it[Keys.style] = style.name }
     }
 
     suspend fun setKeepScreenOn(keepOn: Boolean) {

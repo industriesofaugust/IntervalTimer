@@ -42,6 +42,7 @@ import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
@@ -72,11 +73,16 @@ fun WearTimerScreen(
 
     if (state.intervals.isEmpty()) return
 
+    val dial = settings.style == AppStyle.DIAL
     when {
         state.phase == TimerPhase.FINISHED ->
-            FinishedContent(state = state, live = live, onDone = onDone)
-        isAmbient -> AmbientContent(state = state)
-        else -> RunningContent(state = state, live = live)
+            if (dial) DialFinishedContent(state = state, live = live, onDone = onDone)
+            else FinishedContent(state = state, live = live, onDone = onDone)
+        isAmbient ->
+            if (dial) DialAmbientContent(state = state) else AmbientContent(state = state)
+        else ->
+            if (dial) DialRunningContent(state = state, live = live)
+            else RunningContent(state = state, live = live)
     }
 }
 
@@ -259,7 +265,7 @@ private fun RunningContent(
 
 /** Sized so three fit side by side inside the round screen. */
 @Composable
-private fun TimerButton(
+internal fun TimerButton(
     icon: ImageVector,
     description: String,
     onClick: () -> Unit,
