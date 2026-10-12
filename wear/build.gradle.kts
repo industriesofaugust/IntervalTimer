@@ -1,17 +1,17 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
 android {
-    namespace = "com.brian.intervaltimer"
+    namespace = "com.august.intervaltimer"
     compileSdk = 36
 
     defaultConfig {
         // Same applicationId as the phone app: required so the two apps are
         // recognized as a phone+watch pair (and for Data Layer sync later).
-        applicationId = "com.brian.intervaltimer"
+        applicationId = "com.august.intervaltimer"
         minSdk = 30
         targetSdk = 34
         versionCode = 8

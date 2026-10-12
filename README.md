@@ -107,12 +107,12 @@ About → tap Build number 7×), turn on wireless debugging, pair via
 ## Project structure
 
 ```
-core/src/main/java/com/brian/intervaltimer/
+core/src/main/java/com/august/intervaltimer/
   model/Interval.kt        # Interval data class + quick-build session generator
   timer/TimerViewModel.kt  # shared countdown engine: ticking, cue events, pause/skip
   timer/SoundPlayer.kt     # beep cues via ToneGenerator (used by the phone)
 
-app/src/main/java/com/brian/intervaltimer/
+app/src/main/java/com/august/intervaltimer/
   MainActivity.kt          # phone entry point + navigation graph
   TimerApp.kt              # Application class: database + repository singletons
   data/                    # Room entities, DAO, database, repository
@@ -125,7 +125,7 @@ app/src/main/java/com/brian/intervaltimer/
   ui/PhoneSettingsScreen.kt # watch cues, phone sound, Health Connect, theme
   ui/theme/                # colors, typography, Material 3 theme
 
-wear/src/main/java/com/brian/intervaltimer/
+wear/src/main/java/com/august/intervaltimer/
   MainActivity.kt          # watch entry point + swipe-dismissable navigation
   haptics/HapticsPlayer.kt # vibration patterns, scaled by level (1–5)
   settings/WatchSettings.kt # DataStore: cue levels, screen-on, recents

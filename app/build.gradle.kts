@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -6,11 +6,11 @@
 }
 
 android {
-    namespace = "com.brian.intervaltimer"
+    namespace = "com.august.intervaltimer"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.brian.intervaltimer"
+        applicationId = "com.august.intervaltimer"
         minSdk = 26
         targetSdk = 36
         versionCode = 8

@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.brian.intervaltimer.core"
+    namespace = "com.august.intervaltimer.core"
     compileSdk = 36
 
     defaultConfig {
