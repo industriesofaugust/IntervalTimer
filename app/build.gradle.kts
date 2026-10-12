@@ -13,8 +13,8 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.10"
+        versionCode = 12
+        versionName = "0.11"
     }
 
     buildTypes {
@@ -30,9 +30,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    kotlinOptions {
-        jvmTarget = "11"
-    }
     buildFeatures {
         compose = true
     }
@@ -45,6 +42,12 @@ android {
 // files in git lets future upgrades be tested against real old versions.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    }
 }
 
 dependencies {

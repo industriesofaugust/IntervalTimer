@@ -3,7 +3,7 @@
 A workout interval timer for Android (phone) with a Wear OS companion app planned.
 Phone = build and review sessions; watch = run them.
 
-## Current status: v0.10
+## Current status: v0.11
 
 Three modules:
 - `app` — the phone app, three pages behind a bottom bar:
@@ -35,6 +35,8 @@ Design language everywhere: coral = work, teal = rest, amber = get ready.
 - [x] Phase 6 — history, HR chart, Health Connect
 - [x] v0.7 — watch settings/preview/create + stronger haptics; phone edit
   mode + three-page layout with bottom navigation
+- [x] v0.11 — automated tests (timer engine, sync formats, database
+  upgrades) and library updates
 - [x] v0.10 — phone workouts saved to history, end-early summary on the
   phone, drag/duplicate in the editor, richer watch timer, exact times on
   the watch
@@ -50,6 +52,18 @@ Possible next steps (see `IntervalTimer-Improvement-Plan.md` in the Claude
 Projects folder): bug fixes from the code review, watch foreground service
 with Ongoing Activity and ambient mode, saving phone workouts to history,
 tests.
+
+## Tests
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat testDebugUnitTest
+```
+
+Run this before installing a new build. The core tests drive the real timer
+engine on a fake clock; the app tests open old database versions with the
+current code. Keep the Android Gradle Plugin at 8.12.x until Android Studio
+is updated, or Studio will refuse to sync the project.
 
 ## How to run
 
