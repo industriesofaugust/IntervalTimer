@@ -25,4 +25,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     // `api` (not `implementation`) so app and wear can use the JSON codec too.
     api(libs.kotlinx.serialization.json)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
