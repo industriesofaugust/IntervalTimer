@@ -7,7 +7,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.ui.theme.typeColor
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,19 +74,35 @@ fun ResultCard(result: WorkoutResultEntity, onClick: (() -> Unit)? = null) {
             }
             Spacer(Modifier.height(2.dp))
             if (dial) {
-                val details = buildList {
-                    add(formatDialDate(result.completedAt))
-                    result.avgHeartRate?.let { add("♥ ${it.roundToInt()}") }
-                    // Only worth saying when the workout was cut short.
-                    if (completed != null && intervals.isNotEmpty() && completed < intervals.size) {
-                        add("$completed/${intervals.size}")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val heartRate = result.avgHeartRate
+                    Text(
+                        text = formatDialDate(result.completedAt) + if (heartRate != null) " · " else "",
+                        style = captionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (heartRate != null) {
+                        Icon(
+                            imageVector = Icons.Filled.Favorite,
+                            contentDescription = "Average heart rate",
+                            tint = typeColor(IntervalType.WORK),
+                            modifier = Modifier.size(12.dp),
+                        )
                     }
+                    val rest = buildList {
+                        if (heartRate != null) add(" ${heartRate.roundToInt()}")
+                        // Only worth saying when the workout was cut short.
+                        if (completed != null && intervals.isNotEmpty() && completed < intervals.size) {
+                            add("$completed/${intervals.size}")
+                        }
+                    }
+                    Text(
+                        text = (if (heartRate == null && rest.isNotEmpty()) " · " else "") +
+                            rest.joinToString(" · "),
+                        style = captionStyle(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Text(
-                    text = details.joinToString(" · "),
-                    style = captionStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (intervals.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     // Lit as far as the workout got, grey after that.

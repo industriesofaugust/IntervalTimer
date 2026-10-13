@@ -406,11 +406,20 @@ internal fun DialFinishedContent(state: TimerUiState, live: LiveMetrics, onDone:
             val avg = live.averageHeartRate
             val max = live.maxHeartRate
             if (avg != null && max != null) {
-                Text(
-                    text = "♥ ${avg.roundToInt()} AVG · ${max.roundToInt()} MAX",
-                    style = DialType.caption,
-                    color = MaterialTheme.colors.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Favorite,
+                        contentDescription = null,
+                        tint = WorkAccent,
+                        modifier = Modifier.size(11.dp),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "${avg.roundToInt()} AVG · ${max.roundToInt()} MAX",
+                        style = DialType.caption,
+                        color = MaterialTheme.colors.onSurfaceVariant,
+                    )
+                }
             }
             if (live.steps > 0 || live.calories > 0) {
                 Text(

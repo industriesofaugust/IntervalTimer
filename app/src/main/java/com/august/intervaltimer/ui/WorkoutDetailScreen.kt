@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +39,7 @@ import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.data.hrSeries
 import com.august.intervaltimer.data.intervals
+import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.ui.components.SessionStrip
 import com.august.intervaltimer.ui.theme.DialType
@@ -44,6 +48,7 @@ import com.august.intervaltimer.ui.theme.captionStyle
 import com.august.intervaltimer.ui.theme.figureStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
+import com.august.intervaltimer.ui.theme.typeColor
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 class WorkoutDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
@@ -134,8 +139,8 @@ fun WorkoutDetailScreen(
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DetailTile("Avg ♥", result.avgHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
-                DetailTile("Max ♥", result.maxHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
+                DetailTile("Avg", result.avgHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f), heart = true)
+                DetailTile("Max", result.maxHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f), heart = true)
                 DetailTile("Kcal", result.calories?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
             }
 
@@ -146,6 +151,7 @@ fun WorkoutDetailScreen(
                 HrChart(
                     series = series,
                     intervals = intervals,
+                    totalSeconds = result.totalSeconds,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(190.dp),
@@ -185,19 +191,30 @@ fun WorkoutDetailScreen(
 }
 
 @Composable
-private fun DetailTile(label: String, value: String, modifier: Modifier = Modifier) {
+private fun DetailTile(label: String, value: String, modifier: Modifier = Modifier, heart: Boolean = false) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier,
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(
-                text = label.labelCase(),
-                style = captionStyle(),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = label.labelCase(),
+                    style = captionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                if (heart) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Favorite,
+                        contentDescription = "heart rate",
+                        tint = typeColor(IntervalType.WORK),
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
             Spacer(Modifier.height(4.dp))
             Text(text = value, style = figureStyle(), maxLines = 1)
         }

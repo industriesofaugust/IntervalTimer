@@ -30,6 +30,8 @@ import androidx.wear.compose.material.TimeText
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import androidx.compose.ui.unit.sp
+import com.august.intervaltimer.ui.components.DialType
 import com.august.intervaltimer.ui.components.LocalDial
 
 /**
@@ -124,7 +126,11 @@ private fun IntervalPreviewRow(interval: Interval) {
         Spacer(Modifier.width(8.dp))
         Text(
             text = formatDuration(interval.durationSeconds),
-            style = MaterialTheme.typography.caption1,
+            style = if (LocalDial.current) {
+                DialType.caption.copy(fontSize = 13.sp)
+            } else {
+                MaterialTheme.typography.caption1
+            },
             color = MaterialTheme.colors.onSurfaceVariant,
         )
     }

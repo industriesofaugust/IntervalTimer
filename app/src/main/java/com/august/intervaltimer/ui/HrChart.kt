@@ -47,6 +47,7 @@ import kotlin.math.roundToInt
 fun HrChart(
     series: List<HrSample>,
     intervals: List<Interval>,
+    totalSeconds: Int,
     modifier: Modifier = Modifier,
 ) {
     val dark = isAppInDarkTheme()
@@ -69,8 +70,9 @@ fun HrChart(
         if (series.size < 2) return@Canvas
 
         val leadIn = (TimerUiState.LEAD_IN_MILLIS / 1000).toInt()
-        val plannedEnd = leadIn + intervals.sumOf { it.durationSeconds }
-        val maxElapsed = maxOf(series.maxOf { it.elapsedSeconds }, plannedEnd).coerceAtLeast(1)
+        // The chart covers what was actually done, so a workout that ended
+        // early is not squeezed into the corner of its planned length.
+        val maxElapsed = maxOf(series.maxOf { it.elapsedSeconds }, leadIn + totalSeconds).coerceAtLeast(1)
 
         val minBpm = floor(series.minOf { it.bpm } / 10.0) * 10.0 - 5.0
         val maxBpm = ceil(series.maxOf { it.bpm } / 10.0) * 10.0 + 10.0
@@ -83,8 +85,9 @@ fun HrChart(
         // Interval bands, starting after the five-second get-ready.
         var start = leadIn
         intervals.forEach { interval ->
+            if (start >= maxElapsed) return@forEach
             val left = x(start)
-            val width = x(start + interval.durationSeconds) - left
+            val width = x(minOf(start + interval.durationSeconds, maxElapsed)) - left
             val work = interval.type == IntervalType.WORK
             drawRect(
                 color = if (work) workBand else restBand,
@@ -109,15 +112,6 @@ fun HrChart(
             strokeWidth = 1.5.dp.toPx(),
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 4.dp.toPx())),
         )
-        val averageLabel = textMeasurer.measure("AVG ${average.roundToInt()}", labelStyle.copy(color = lineColor))
-        val averageLabelTop = averageY + 3.dp.toPx()
-        drawRoundRect(
-            color = surface,
-            topLeft = Offset(2.dp.toPx(), averageLabelTop),
-            size = Size(averageLabel.size.width + 8.dp.toPx(), averageLabel.size.height + 2.dp.toPx()),
-            cornerRadius = CornerRadius(4.dp.toPx()),
-        )
-        drawText(averageLabel, topLeft = Offset(6.dp.toPx(), averageLabelTop + 1.dp.toPx()))
 
         // The heart-rate line itself.
         val path = Path()
@@ -130,6 +124,18 @@ fun HrChart(
             color = lineColor,
             style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
         )
+
+        // The average's label goes on after the line, so the line never crosses it.
+        val averageLabel = textMeasurer.measure("AVG ${average.roundToInt()}", labelStyle.copy(color = lineColor))
+        val averageLabelTop = (averageY + 4.dp.toPx())
+            .coerceAtMost(chartHeight - averageLabel.size.height - 4.dp.toPx())
+        drawRoundRect(
+            color = surface,
+            topLeft = Offset(2.dp.toPx(), averageLabelTop),
+            size = Size(averageLabel.size.width + 8.dp.toPx(), averageLabel.size.height + 2.dp.toPx()),
+            cornerRadius = CornerRadius(4.dp.toPx()),
+        )
+        drawText(averageLabel, topLeft = Offset(6.dp.toPx(), averageLabelTop + 1.dp.toPx()))
 
         // Maximum: a ringed point with a tag.
         val peak = series.maxBy { it.bpm }
