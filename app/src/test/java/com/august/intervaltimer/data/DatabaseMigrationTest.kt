@@ -81,11 +81,7 @@ class DatabaseMigrationTest {
 
     private fun openCurrent(): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, dbName)
-            .addMigrations(
-                AppDatabase.MIGRATION_1_2,
-                AppDatabase.MIGRATION_2_3,
-                AppDatabase.MIGRATION_3_4,
-            )
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS)
             .allowMainThreadQueries()
             .build()
 
@@ -136,8 +132,11 @@ class DatabaseMigrationTest {
             val result = database.resultDao().observeAll().first().single()
             assertEquals("Tabata", result.templateName)
             assertEquals(140.5, result.avgHeartRate!!, 0.001)
-            // The heart-rate series column was added in version 3.
+            // The heart-rate series column was added in version 3, and the
+            // interval list in version 5.
             assertNull(result.hrSeriesJson)
+            assertNull(result.intervalsJson)
+            assertEquals(0, result.intervals().size)
         }
         database.close()
     }

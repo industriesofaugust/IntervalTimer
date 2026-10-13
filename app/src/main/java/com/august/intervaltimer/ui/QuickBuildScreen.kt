@@ -41,6 +41,13 @@ import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.QuickBuildConfig
 import com.august.intervaltimer.model.buildSession
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.ui.components.SessionStrip
+import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.theme.PageTitle
+import com.august.intervaltimer.ui.theme.captionStyle
+import com.august.intervaltimer.ui.theme.figureStyle
+import com.august.intervaltimer.ui.theme.isDial
+import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.model.stepDuration
 import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
@@ -72,10 +79,7 @@ fun QuickBuildScreen(
             .padding(horizontal = 24.dp),
     ) {
         Spacer(Modifier.height(40.dp))
-        Text(
-            text = "Interval timer",
-            style = MaterialTheme.typography.headlineMedium,
-        )
+        PageTitle("Quick session")
         Spacer(Modifier.height(6.dp))
         Text(
             text = "Set your rounds, then start.",
@@ -113,14 +117,22 @@ fun QuickBuildScreen(
         Spacer(Modifier.height(28.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Session length",
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Session length".labelCase(),
+                style = captionStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.weight(1f))
             Text(
                 text = formatDuration(totalSeconds),
-                style = MaterialTheme.typography.titleMedium,
+                style = figureStyle(),
+            )
+        }
+        if (isDial()) {
+            Spacer(Modifier.height(10.dp))
+            SessionStrip(
+                intervals = buildSession(QuickBuildConfig(rounds, workSeconds, restSeconds)),
+                modifier = Modifier.fillMaxWidth(),
+                height = 5.dp,
             )
         }
         Spacer(Modifier.height(20.dp))
@@ -133,7 +145,10 @@ fun QuickBuildScreen(
                 .height(56.dp),
             shape = RoundedCornerShape(18.dp),
         ) {
-            Text("Start session", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "Start session".labelCase(),
+                style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
+            )
         }
         Spacer(Modifier.height(12.dp))
         OutlinedButton(
@@ -143,7 +158,10 @@ fun QuickBuildScreen(
                 .height(56.dp),
             shape = RoundedCornerShape(18.dp),
         ) {
-            Text("Customize intervals", style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = "Customize intervals".labelCase(),
+                style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
+            )
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -191,15 +209,15 @@ private fun SettingStepper(
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelLarge,
+                        text = label.labelCase(),
+                        style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = value,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = if (isDial()) DialType.figureLarge else MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = if (onValueClick != null) {
                         Modifier

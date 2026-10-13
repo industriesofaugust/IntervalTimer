@@ -45,7 +45,9 @@ import com.august.intervaltimer.ui.PhoneSettingsScreen
 import com.august.intervaltimer.ui.QuickBuildScreen
 import com.august.intervaltimer.ui.TimerScreen
 import com.august.intervaltimer.ui.WorkoutDetailScreen
+import com.august.intervaltimer.ui.components.DialBottomBar
 import com.august.intervaltimer.ui.theme.IntervalTimerTheme
+import com.august.intervaltimer.ui.theme.isDial
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,11 +92,17 @@ fun IntervalTimerApp() {
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = topLevelPages.any { it.route == currentRoute }
 
-    IntervalTimerTheme(darkTheme = darkTheme) {
+    IntervalTimerTheme(darkTheme = darkTheme, style = settings.style) {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
-                if (showBottomBar) {
+                if (showBottomBar && isDial()) {
+                    DialBottomBar(
+                        pages = topLevelPages.map { it.route to it.label },
+                        currentRoute = currentRoute,
+                        onSelect = { navController.navigateTopLevel(it) },
+                    )
+                } else if (showBottomBar) {
                     NavigationBar {
                         topLevelPages.forEach { page ->
                             NavigationBarItem(

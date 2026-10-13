@@ -3,7 +3,7 @@
 A workout interval timer for Android (phone) with a Wear OS companion app planned.
 Phone = build and review sessions; watch = run them.
 
-## Current status: v0.11
+## Current status: v0.12
 
 Three modules:
 - `app` — the phone app, three pages behind a bottom bar:
@@ -35,6 +35,8 @@ Design language everywhere: coral = work, teal = rest, amber = get ready.
 - [x] Phase 6 — history, HR chart, Health Connect
 - [x] v0.7 — watch settings/preview/create + stronger haptics; phone edit
   mode + three-page layout with bottom navigation
+- [x] v0.12 — the Dial redesign across both apps (see docs/DESIGN.md);
+  the earlier look remains as the Minimal style
 - [x] v0.11 — automated tests (timer engine, sync formats, database
   upgrades) and library updates
 - [x] v0.10 — phone workouts saved to history, end-early summary on the

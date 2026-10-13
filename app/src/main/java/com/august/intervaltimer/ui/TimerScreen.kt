@@ -5,6 +5,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import com.august.intervaltimer.ui.theme.isAppInDarkTheme
+import com.august.intervaltimer.ui.theme.isDial
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -101,13 +102,28 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
         onExit()
     }
 
-    if (state.phase == TimerPhase.FINISHED) {
-        FinishedContent(state = state, onDone = {
-            viewModel.stop()
-            onExit()
-        })
-    } else {
-        RunningContent(state = state, viewModel = viewModel, onExit = onExit)
+    val onDone = {
+        viewModel.stop()
+        onExit()
+    }
+    when {
+        isDial() && state.phase == TimerPhase.FINISHED ->
+            DialFinishedContent(state = state, sessionName = sessionName, onDone = onDone)
+        isDial() ->
+            DialRunningContent(
+                state = state,
+                sessionName = sessionName,
+                format = settings.countdownFormat,
+                onTogglePause = viewModel::togglePause,
+                onSkip = viewModel::skip,
+                onEnd = {
+                    // During get-ready nothing has been done, so there is
+                    // nothing to summarize.
+                    if (state.phase == TimerPhase.LEAD_IN) onDone() else viewModel.endEarly()
+                },
+            )
+        state.phase == TimerPhase.FINISHED -> FinishedContent(state = state, onDone = onDone)
+        else -> RunningContent(state = state, viewModel = viewModel, onExit = onExit)
     }
 }
 

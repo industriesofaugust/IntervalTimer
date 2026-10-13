@@ -7,7 +7,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [TemplateEntity::class, IntervalEntity::class, WorkoutResultEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -58,5 +58,20 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+
+        /** Version 4 → 5: results remember their intervals, for strips and chart bands. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `intervalsJson` TEXT")
+                db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `completedIntervals` INTEGER")
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+        )
     }
 }

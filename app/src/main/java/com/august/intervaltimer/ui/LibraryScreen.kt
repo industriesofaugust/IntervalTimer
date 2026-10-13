@@ -42,6 +42,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -50,7 +51,14 @@ import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.TemplateWithIntervals
 import com.august.intervaltimer.data.toDomainIntervals
 import com.august.intervaltimer.model.Interval
+import com.august.intervaltimer.design.intervalCountLabel
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.ui.components.SessionStrip
+import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.theme.SectionHeader
+import com.august.intervaltimer.ui.theme.isDial
+import com.august.intervaltimer.ui.theme.labelCase
+import com.august.intervaltimer.ui.theme.nameStyle
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -120,16 +128,26 @@ fun LibraryScreen(
             item {
                 Column {
                     Spacer(Modifier.height(40.dp))
-                    Text(
-                        text = "Interval timer",
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Pick a template, or run a quick session.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (isDial()) {
+                        // The wordmark.
+                        Text(text = "INTERVAL", style = DialType.title)
+                        Text(
+                            text = "TIMER",
+                            style = DialType.label.copy(letterSpacing = 4.sp),
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        Text(
+                            text = "Interval timer",
+                            style = MaterialTheme.typography.headlineMedium,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Pick a template, or run a quick session.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.height(24.dp))
                     Button(
                         onClick = onQuickSession,
@@ -138,7 +156,10 @@ fun LibraryScreen(
                             .height(56.dp),
                         shape = RoundedCornerShape(18.dp),
                     ) {
-                        Text("Quick session", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            text = "Quick session".labelCase(),
+                            style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
+                        )
                     }
                     Spacer(Modifier.height(16.dp))
                 }
@@ -147,13 +168,13 @@ fun LibraryScreen(
             item {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Templates",
-                            style = MaterialTheme.typography.titleMedium,
-                        )
+                        SectionHeader("Templates")
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = onNewTemplate) {
-                            Text("+ New")
+                            Text(
+                                text = "+ New".labelCase(),
+                                style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+                            )
                         }
                     }
                     if (templates.size > 1) {
@@ -314,15 +335,31 @@ private fun TemplateCard(
             Column(Modifier.weight(1f)) {
                 Text(
                     text = template.template.name,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = nameStyle(),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "${template.intervals.size} intervals · ${formatDuration(totalSeconds)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (isDial()) {
+                    Text(
+                        text = "${intervalCountLabel(template.intervals.size)} · ${formatDuration(totalSeconds)}",
+                        style = DialType.caption,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    // The shape of the session: coral for work, teal for rest.
+                    SessionStrip(
+                        intervals = template.toDomainIntervals(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 12.dp),
+                    )
+                } else {
+                    Text(
+                        text = "${template.intervals.size} intervals · ${formatDuration(totalSeconds)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             FilledIconButton(
                 onClick = {

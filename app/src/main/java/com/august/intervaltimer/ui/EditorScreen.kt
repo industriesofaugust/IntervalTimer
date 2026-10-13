@@ -49,6 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -64,7 +67,15 @@ import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.MAX_INTERVAL_SECONDS
 import com.august.intervaltimer.model.MIN_INTERVAL_SECONDS
+import com.august.intervaltimer.design.intervalCountLabel
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.ui.components.SessionStrip
+import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.theme.captionStyle
+import com.august.intervaltimer.ui.theme.figureStyle
+import com.august.intervaltimer.ui.theme.isDial
+import com.august.intervaltimer.ui.theme.labelCase
+import com.august.intervaltimer.ui.theme.typeColor
 import com.august.intervaltimer.model.stepDuration
 import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
@@ -252,6 +263,25 @@ fun EditorScreen(
             )
         }
 
+        if (isDial()) {
+            // The shape of the workout, redrawn as intervals change.
+            Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp)) {
+                SessionStrip(
+                    intervals = viewModel.rows.map {
+                        Interval(it.name, it.type, it.durationSeconds)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 5.dp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "${intervalCountLabel(viewModel.rows.size)} · ${formatDuration(viewModel.totalSeconds)}",
+                    style = DialType.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 16.dp),
@@ -310,14 +340,22 @@ fun EditorScreen(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text("+ Work")
+                        Text(
+                            text = "+ Work".labelCase(),
+                            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+                            color = typeColor(IntervalType.WORK),
+                        )
                     }
                     OutlinedButton(
                         onClick = { viewModel.addRow(IntervalType.REST) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text("+ Rest")
+                        Text(
+                            text = "+ Rest".labelCase(),
+                            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+                            color = typeColor(IntervalType.REST),
+                        )
                     }
                 }
             }
@@ -332,22 +370,22 @@ fun EditorScreen(
             ) {
                 Column {
                     Text(
-                        text = "Total",
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "Total".labelCase(),
+                        style = captionStyle(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = formatDuration(viewModel.totalSeconds),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = figureStyle(),
                     )
                 }
                 Spacer(Modifier.weight(1f))
                 if (viewModel.isExisting) {
                     TextButton(onClick = { viewModel.delete(onDeleted = onSaved) }) {
-                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                        Text("Delete".labelCase(), color = MaterialTheme.colorScheme.error)
                     }
                     TextButton(onClick = { viewModel.saveAsCopy(onSaved = onSaved) }) {
-                        Text("Save copy")
+                        Text("Save copy".labelCase())
                     }
                     Spacer(Modifier.width(4.dp))
                 }
@@ -356,7 +394,10 @@ fun EditorScreen(
                     modifier = Modifier.height(52.dp),
                     shape = RoundedCornerShape(16.dp),
                 ) {
-                    Text("Save")
+                    Text(
+                        text = "Save".labelCase(),
+                        style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
+                    )
                 }
             }
         }
@@ -399,8 +440,20 @@ private fun IntervalEditorCard(
         shadowElevation = if (highlighted) 8.dp else 0.dp,
         modifier = modifier.fillMaxWidth(),
     ) {
+        val showEdge = isDial()
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                // A coloured edge marks the interval as work or rest.
+                .drawBehind {
+                    if (showEdge) {
+                        drawRect(
+                            color = accent,
+                            topLeft = Offset(0f, 12.dp.toPx()),
+                            size = Size(3.dp.toPx(), size.height - 24.dp.toPx()),
+                        )
+                    }
+                }
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -458,7 +511,7 @@ private fun IntervalEditorCard(
                 }
                 Text(
                     text = formatDuration(row.durationSeconds),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = figureStyle(),
                     color = accent,
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))

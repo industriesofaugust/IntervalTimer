@@ -62,4 +62,8 @@ data class WorkoutResultEntity(
     val steps: Long?,
     val calories: Double?,
     val hrSeriesJson: String? = null,
+    // The workout's intervals and how many were finished, for drawing its
+    // shape in History. Null on results saved before version 5.
+    val intervalsJson: String? = null,
+    val completedIntervals: Int? = null,
 )

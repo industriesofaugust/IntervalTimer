@@ -6,6 +6,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.august.intervaltimer.design.AppStyle
+import com.august.intervaltimer.design.CountdownFormat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -15,6 +17,8 @@ data class AppSettings(
     val soundEnabled: Boolean = true,
     val soundVolume: Int = 85,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val style: AppStyle = AppStyle.DIAL,
+    val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
 )
 
 private val Context.dataStore by preferencesDataStore(name = "app_settings")
@@ -25,6 +29,8 @@ class AppSettingsRepository(private val context: Context) {
         val soundEnabled = booleanPreferencesKey("sound_enabled")
         val soundVolume = intPreferencesKey("sound_volume")
         val themeMode = stringPreferencesKey("theme_mode")
+        val style = stringPreferencesKey("style")
+        val countdownFormat = stringPreferencesKey("countdown_format")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -34,6 +40,12 @@ class AppSettingsRepository(private val context: Context) {
             themeMode = prefs[Keys.themeMode]
                 ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
+            style = prefs[Keys.style]
+                ?.let { runCatching { AppStyle.valueOf(it) }.getOrNull() }
+                ?: AppStyle.DIAL,
+            countdownFormat = prefs[Keys.countdownFormat]
+                ?.let { runCatching { CountdownFormat.valueOf(it) }.getOrNull() }
+                ?: CountdownFormat.SECONDS,
         )
     }
 
@@ -43,6 +55,14 @@ class AppSettingsRepository(private val context: Context) {
 
     suspend fun setSoundVolume(volume: Int) {
         context.dataStore.edit { it[Keys.soundVolume] = volume.coerceIn(0, 100) }
+    }
+
+    suspend fun setStyle(style: AppStyle) {
+        context.dataStore.edit { it[Keys.style] = style.name }
+    }
+
+    suspend fun setCountdownFormat(format: CountdownFormat) {
+        context.dataStore.edit { it[Keys.countdownFormat] = format.name }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

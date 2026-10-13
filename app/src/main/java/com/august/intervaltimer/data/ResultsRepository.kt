@@ -1,7 +1,10 @@
 package com.august.intervaltimer.data
 
+import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.sync.HrSample
 import com.august.intervaltimer.sync.HrSeriesCodec
+import com.august.intervaltimer.sync.IntervalListCodec
+import com.august.intervaltimer.sync.toDomainIntervals
 import com.august.intervaltimer.sync.WorkoutResult
 import kotlinx.coroutines.flow.Flow
 
@@ -23,6 +26,10 @@ class ResultsRepository(private val dao: ResultDao) {
     }
 }
 
+/** The workout's intervals, or empty for results saved before they were recorded. */
+fun WorkoutResultEntity.intervals(): List<Interval> =
+    intervalsJson?.let { IntervalListCodec.decode(it).toDomainIntervals() } ?: emptyList()
+
 fun WorkoutResultEntity.hrSeries(): List<HrSample> =
     hrSeriesJson?.let { HrSeriesCodec.decode(it) } ?: emptyList()
 
@@ -37,4 +44,6 @@ private fun WorkoutResult.toEntity() = WorkoutResultEntity(
     steps = steps,
     calories = calories,
     hrSeriesJson = hrSeries.takeIf { it.isNotEmpty() }?.let { HrSeriesCodec.encode(it) },
+    intervalsJson = intervals.takeIf { it.isNotEmpty() }?.let { IntervalListCodec.encode(it) },
+    completedIntervals = completedIntervals,
 )

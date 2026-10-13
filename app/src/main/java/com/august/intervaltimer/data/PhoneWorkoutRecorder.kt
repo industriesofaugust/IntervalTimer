@@ -3,6 +3,7 @@ package com.august.intervaltimer.data
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.sync.toSyncedIntervals
 import com.august.intervaltimer.timer.TimerUiState
 
 /**
@@ -24,6 +25,8 @@ suspend fun TimerApp.recordPhoneWorkout(name: String?, finished: TimerUiState) {
             totalSeconds = finished.elapsedSecondsAtEnd,
             workSeconds = workIntervals.sumOf { it.durationSeconds },
             workIntervals = workIntervals.size,
+            intervals = finished.intervals.toSyncedIntervals(),
+            completedIntervals = finished.completedIntervals,
         )
     )
     val healthConnect = HealthConnectWriter(this)

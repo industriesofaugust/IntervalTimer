@@ -1,7 +1,6 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
-import com.august.intervaltimer.ui.theme.isAppInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,12 +35,17 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.data.hrSeries
+import com.august.intervaltimer.data.intervals
 import com.august.intervaltimer.model.formatDuration
-import com.august.intervaltimer.ui.theme.Coral
-import com.august.intervaltimer.ui.theme.CoralLight
+import com.august.intervaltimer.ui.components.SessionStrip
+import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.theme.SectionHeader
+import com.august.intervaltimer.ui.theme.captionStyle
+import com.august.intervaltimer.ui.theme.figureStyle
+import com.august.intervaltimer.ui.theme.isDial
+import com.august.intervaltimer.ui.theme.labelCase
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-
 class WorkoutDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).resultsRepository
     private val resultId: Long = handle.get<Long>("resultId") ?: 0L
@@ -61,6 +65,10 @@ class WorkoutDetailViewModel(app: Application, handle: SavedStateHandle) : Andro
     }
 }
 
+/**
+ * One workout in full. Order, top to bottom: title and date, session strip,
+ * six stat tiles, heart-rate chart, steps, delete.
+ */
 @Composable
 fun WorkoutDetailScreen(
     onBack: () -> Unit,
@@ -68,7 +76,8 @@ fun WorkoutDetailScreen(
 ) {
     val result = viewModel.result ?: return
     val series = result.hrSeries()
-    val accent = if (isAppInDarkTheme()) CoralLight else Coral
+    val intervals = result.intervals()
+    val dial = isDial()
 
     Column(
         modifier = Modifier
@@ -88,11 +97,13 @@ fun WorkoutDetailScreen(
             Column {
                 Text(
                     text = result.templateName ?: "Workout",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = if (dial) DialType.title.copy(fontSize = DialType.exercise.fontSize)
+                    else MaterialTheme.typography.headlineMedium,
                 )
                 Text(
-                    text = formatResultDate(result.completedAt),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = if (dial) formatDialDateTime(result.completedAt)
+                    else formatResultDate(result.completedAt),
+                    style = captionStyle(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -100,50 +111,45 @@ fun WorkoutDetailScreen(
         Spacer(Modifier.height(16.dp))
 
         Column(Modifier.padding(horizontal = 24.dp)) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    DetailRow("Total time", formatDuration(result.totalSeconds))
-                    DetailRow("Time working", formatDuration(result.workSeconds))
-                    DetailRow("Work intervals", "${result.workIntervals}")
-                    result.avgHeartRate?.let {
-                        DetailRow("Average heart rate", "${it.roundToInt()} bpm")
-                    }
-                    result.maxHeartRate?.let {
-                        DetailRow("Max heart rate", "${it.roundToInt()} bpm")
-                    }
-                    result.steps?.let { DetailRow("Steps", "$it") }
-                    result.calories?.let { DetailRow("Calories", "${it.roundToInt()} kcal") }
-                }
+            if (dial && intervals.isNotEmpty()) {
+                // Lit as far as the workout got, grey after that.
+                SessionStrip(
+                    intervals = intervals,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 5.dp,
+                    completedCount = result.completedIntervals,
+                )
+                Spacer(Modifier.height(14.dp))
+            }
+
+            val done = result.completedIntervals
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailTile("Time", formatDuration(result.totalSeconds), Modifier.weight(1f))
+                DetailTile("Work", formatDuration(result.workSeconds), Modifier.weight(1f))
+                DetailTile(
+                    label = "Done",
+                    value = if (done != null && intervals.isNotEmpty()) "$done/${intervals.size}" else "--",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailTile("Avg ♥", result.avgHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
+                DetailTile("Max ♥", result.maxHeartRate?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
+                DetailTile("Kcal", result.calories?.roundToInt()?.toString() ?: "--", Modifier.weight(1f))
             }
 
             Spacer(Modifier.height(24.dp))
-            Text(
-                text = "Heart rate",
-                style = MaterialTheme.typography.titleMedium,
-            )
+            SectionHeader("Heart rate")
             Spacer(Modifier.height(12.dp))
             if (series.size >= 2) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    HrChart(
-                        series = series,
-                        lineColor = accent,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .padding(16.dp),
-                    )
-                }
+                HrChart(
+                    series = series,
+                    intervals = intervals,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp),
+                )
             } else {
                 Text(
                     text = "No heart rate was recorded for this workout.",
@@ -152,12 +158,26 @@ fun WorkoutDetailScreen(
                 )
             }
 
+            result.steps?.let { steps ->
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    text = "$steps steps".labelCase(),
+                    style = captionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+            }
+
             Spacer(Modifier.height(24.dp))
             TextButton(
                 onClick = { viewModel.delete(onDeleted = onBack) },
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
-                Text("Delete workout", color = MaterialTheme.colorScheme.error)
+                Text(
+                    text = "Delete workout".labelCase(),
+                    style = if (dial) DialType.label else MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -165,17 +185,21 @@ fun WorkoutDetailScreen(
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Row {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-        )
+private fun DetailTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = modifier,
+    ) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text = label.labelCase(),
+                style = captionStyle(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(text = value, style = figureStyle(), maxLines = 1)
+        }
     }
 }
