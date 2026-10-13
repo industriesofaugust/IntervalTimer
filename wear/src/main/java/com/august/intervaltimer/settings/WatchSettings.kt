@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.august.intervaltimer.design.AppStyle
+import com.august.intervaltimer.design.CountdownFormat
 import com.august.intervaltimer.sync.RecentTemplate
 import com.august.intervaltimer.sync.RecentTemplatesCodec
 import com.august.intervaltimer.sync.WatchCueSettings
@@ -17,6 +18,7 @@ data class WatchSettings(
     val cues: WatchCueSettings = WatchCueSettings(),
     val keepScreenOn: Boolean = false,
     val style: AppStyle = AppStyle.DIAL,
+    val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
     val recents: List<RecentTemplate> = emptyList(),
 )
 
@@ -32,6 +34,7 @@ class WatchSettingsRepository(private val context: Context) {
         val soundLevel = intPreferencesKey("sound_level_5")
         val keepScreenOn = booleanPreferencesKey("keep_screen_on")
         val style = stringPreferencesKey("style")
+        val countdownFormat = stringPreferencesKey("countdown_format")
         val recents = stringPreferencesKey("recent_templates")
 
         // Old v0.7 keys, read once so upgrades keep the user's choices.
@@ -63,6 +66,9 @@ class WatchSettingsRepository(private val context: Context) {
             style = prefs[Keys.style]
                 ?.let { runCatching { AppStyle.valueOf(it) }.getOrNull() }
                 ?: AppStyle.DIAL,
+            countdownFormat = prefs[Keys.countdownFormat]
+                ?.let { runCatching { CountdownFormat.valueOf(it) }.getOrNull() }
+                ?: CountdownFormat.SECONDS,
             recents = prefs[Keys.recents]?.let { RecentTemplatesCodec.decode(it) } ?: emptyList(),
         )
     }
@@ -74,6 +80,10 @@ class WatchSettingsRepository(private val context: Context) {
             it[Keys.soundEnabled] = cues.soundEnabled
             it[Keys.soundLevel] = cues.soundLevel.coerceIn(1, 5)
         }
+    }
+
+    suspend fun setCountdownFormat(format: CountdownFormat) {
+        context.dataStore.edit { it[Keys.countdownFormat] = format.name }
     }
 
     suspend fun setStyle(style: AppStyle) {

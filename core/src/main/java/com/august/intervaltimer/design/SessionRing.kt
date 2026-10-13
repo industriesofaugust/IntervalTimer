@@ -2,11 +2,24 @@ package com.august.intervaltimer.design
 
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
 
 /** The two looks the apps can wear. Dial is the default. */
 enum class AppStyle { DIAL, MINIMAL }
+
+/** How the big countdown is written: bare seconds ("90") or "1:30". */
+enum class CountdownFormat { SECONDS, MINUTES_SECONDS }
+
+/** The big timer number. Every other duration in the apps uses formatDuration. */
+fun formatCountdown(seconds: Int, format: CountdownFormat): String = when (format) {
+    CountdownFormat.SECONDS -> seconds.toString()
+    CountdownFormat.MINUTES_SECONDS -> formatDuration(seconds)
+}
+
+/** "1 INTERVAL", "5 INTERVALS". */
+fun intervalCountLabel(count: Int): String = if (count == 1) "1 INTERVAL" else "$count INTERVALS"
 
 enum class SegmentState { DONE, CURRENT, UPCOMING }
 

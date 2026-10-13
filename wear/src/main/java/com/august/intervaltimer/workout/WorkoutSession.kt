@@ -10,6 +10,7 @@ import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.ResultSyncCodec
 import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.sync.toSyncedIntervals
 import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.timer.TimerEngine
 import com.august.intervaltimer.timer.TimerPhase
@@ -130,6 +131,8 @@ object WorkoutSession {
             steps = metrics.steps.takeIf { it > 0 },
             calories = metrics.calories.takeIf { it > 0 },
             hrSeries = series,
+            intervals = finished.intervals.toSyncedIntervals(),
+            completedIntervals = finished.completedIntervals,
         )
         // Data items persist, so the result reaches the phone even if it
         // isn't nearby right now.

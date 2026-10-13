@@ -9,6 +9,9 @@ import androidx.wear.compose.material.CompactChip
 import androidx.wear.compose.material.Picker
 import androidx.wear.compose.material.rememberPickerState
 import com.august.intervaltimer.model.MAX_INTERVAL_SECONDS
+import com.august.intervaltimer.ui.components.DialType
+import com.august.intervaltimer.ui.components.LocalDial
+import com.august.intervaltimer.ui.components.SectionLabel
 import com.august.intervaltimer.model.MIN_INTERVAL_SECONDS
 import com.august.intervaltimer.model.stepDuration
 import androidx.compose.foundation.layout.Row
@@ -109,7 +112,7 @@ fun CreateScreen(
 
     Scaffold(timeText = { TimeText() }) {
         ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-            item { ListHeader { Text("New workout") } }
+            item { SectionLabel("New workout") }
             item {
                 ValueStepper(
                     label = "Rounds",
@@ -201,14 +204,20 @@ private fun ValueStepper(
                 .clickable(enabled = onValueClick != null) { onValueClick?.invoke() },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            val dial = LocalDial.current
             Text(
-                text = label,
-                style = MaterialTheme.typography.caption2,
-                color = MaterialTheme.colors.onSurfaceVariant,
+                text = if (dial) label.uppercase() else label,
+                style = if (dial) DialType.label else MaterialTheme.typography.caption2,
+                color = when {
+                    !dial -> MaterialTheme.colors.onSurfaceVariant
+                    label == "Work" -> WorkAccent
+                    label == "Rest" -> RestAccent
+                    else -> MaterialTheme.colors.onSurfaceVariant
+                },
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.title2,
+                style = if (dial) DialType.figure else MaterialTheme.typography.title2,
                 color = MaterialTheme.colors.onBackground,
             )
         }

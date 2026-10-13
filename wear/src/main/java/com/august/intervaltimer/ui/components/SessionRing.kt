@@ -1,7 +1,6 @@
 package com.august.intervaltimer.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -21,18 +20,28 @@ import com.august.intervaltimer.ui.WorkAccent
 import kotlin.math.cos
 import kotlin.math.sin
 
-private fun typeColor(type: IntervalType): Color = when (type) {
+// What is still to come is grey. Work is a little lighter than rest so the
+// shape of the remaining session can still be read.
+private val UpcomingWork = Color(0xFF5A544B)
+private val UpcomingRest = Color(0xFF3A362F)
+
+private fun litColor(type: IntervalType): Color = when (type) {
     IntervalType.WORK -> WorkAccent
     IntervalType.REST -> RestAccent
 }
 
+private fun greyColor(type: IntervalType): Color = when (type) {
+    IntervalType.WORK -> UpcomingWork
+    IntervalType.REST -> UpcomingRest
+}
+
 /**
- * The whole workout as a dial: one arc per interval, coral for work and
- * teal for rest. What is still to come is lit; what is done fades out, and
- * the current arc drains clockwise as its time runs down.
+ * The whole workout as a dial: one arc per interval. The ring lights up as
+ * you go: finished intervals are coral (work) or teal (rest), the current
+ * one fills clockwise, and what is still to come stays grey.
  *
- * With [outline] set (the dimmed ambient screen) it draws thin gray arcs
- * only, to keep lit pixels to a minimum.
+ * With [outline] set (the dimmed ambient screen) it draws thin arcs only, to
+ * keep lit pixels to a minimum.
  */
 @Composable
 fun SessionRing(
@@ -64,14 +73,15 @@ fun SessionRing(
         }
 
         segments.forEach { segment ->
-            val color = if (outline) Color.Gray else typeColor(segment.type)
+            val lit = if (outline) Color.LightGray else litColor(segment.type)
+            val grey = if (outline) Color.DarkGray else greyColor(segment.type)
             when (segment.state) {
-                SegmentState.DONE -> arc(color.copy(alpha = if (outline) 0.25f else 0.16f), segment.startAngle, segment.sweep)
-                SegmentState.UPCOMING -> arc(color.copy(alpha = if (outline) 0.7f else 0.5f), segment.startAngle, segment.sweep)
+                SegmentState.DONE -> arc(lit, segment.startAngle, segment.sweep)
+                SegmentState.UPCOMING -> arc(grey, segment.startAngle, segment.sweep)
                 SegmentState.CURRENT -> {
-                    val spent = segment.sweep * (1f - currentRemaining)
-                    arc(color.copy(alpha = if (outline) 0.25f else 0.16f), segment.startAngle, spent)
-                    arc(if (outline) Color.LightGray else color, segment.startAngle + spent, segment.sweep - spent)
+                    val filled = segment.sweep * (1f - currentRemaining)
+                    arc(lit, segment.startAngle, filled)
+                    arc(grey, segment.startAngle + filled, segment.sweep - filled)
                 }
             }
         }
@@ -112,7 +122,7 @@ fun SessionStrip(
         segments.forEach { segment ->
             val width = size.width * segment.fraction
             drawRect(
-                color = typeColor(segment.type),
+                color = litColor(segment.type),
                 topLeft = Offset(x, 0f),
                 size = Size((width - gap).coerceAtLeast(1f), size.height),
             )

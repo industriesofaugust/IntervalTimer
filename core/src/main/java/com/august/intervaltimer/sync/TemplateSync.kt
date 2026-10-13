@@ -153,6 +153,10 @@ data class WorkoutResult(
     val steps: Long? = null,
     val calories: Double? = null,
     val hrSeries: List<HrSample> = emptyList(),
+    // The workout's intervals and how many were finished, so History can
+    // draw its shape. Absent on results saved by older versions.
+    val intervals: List<SyncedInterval> = emptyList(),
+    val completedIntervals: Int? = null,
 )
 
 object HrSeriesCodec {
@@ -185,3 +189,22 @@ fun SyncedTemplate.toIntervals(): List<Interval> = intervals.map {
 }
 
 val SyncedTemplate.totalSeconds: Int get() = intervals.sumOf { it.durationSeconds }
+
+object IntervalListCodec {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val serializer =
+        kotlinx.serialization.builtins.ListSerializer(SyncedInterval.serializer())
+
+    fun encode(intervals: List<SyncedInterval>): String = json.encodeToString(serializer, intervals)
+
+    fun decode(raw: String): List<SyncedInterval> =
+        runCatching { json.decodeFromString(serializer, raw) }.getOrDefault(emptyList())
+}
+
+fun List<SyncedInterval>.toDomainIntervals(): List<Interval> = map {
+    Interval(
+        name = it.name,
+        type = runCatching { IntervalType.valueOf(it.type) }.getOrDefault(IntervalType.WORK),
+        durationSeconds = it.durationSeconds,
+    )
+}

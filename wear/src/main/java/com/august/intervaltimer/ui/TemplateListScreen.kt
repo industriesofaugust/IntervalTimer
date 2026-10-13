@@ -14,7 +14,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.material.Button
@@ -23,18 +22,20 @@ import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.CompactChip
 import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.ListHeader
 import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.QuickBuildConfig
 import com.august.intervaltimer.model.buildSession
-import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
 import com.august.intervaltimer.sync.toIntervals
 import com.august.intervaltimer.timer.TimerPhase
+import com.august.intervaltimer.ui.components.DialType
+import com.august.intervaltimer.ui.components.LocalDial
+import com.august.intervaltimer.ui.components.SectionLabel
+import com.august.intervaltimer.ui.components.TemplateChip
 import com.august.intervaltimer.workout.WorkoutSession
 
 /** Built-in workouts, always available even before the first sync. */
@@ -56,8 +57,8 @@ fun TemplateListScreen(
     onCustom: () -> Unit,
 ) {
     val state by WorkoutSession.state.collectAsState()
-    // Protects against an accidental swipe-away mid-workout.
     val inProgress = state.intervals.isNotEmpty() && state.phase != TimerPhase.FINISHED
+    val dial = LocalDial.current
 
     val context = LocalContext.current
     val settingsRepository = remember { WatchSettingsRepository(context.applicationContext) }
@@ -69,7 +70,10 @@ fun TemplateListScreen(
                 item {
                     Chip(
                         onClick = onResume,
-                        label = { Text("Resume session") },
+                        label = {
+                            if (dial) Text("RESUME SESSION", style = DialType.button)
+                            else Text("Resume session")
+                        },
                         colors = ChipDefaults.primaryChipColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -104,25 +108,15 @@ fun TemplateListScreen(
             }
 
             if (settings.recents.isNotEmpty()) {
-                item { ListHeader { Text("Recents") } }
+                item { SectionLabel("Recents") }
                 settings.recents.take(2).forEach { recent ->
                     item {
-                        Chip(
-                            onClick = { onSelect(recent.name, recent.toIntervals()) },
-                            label = {
-                                Text(
-                                    text = recent.name,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            },
-                            secondaryLabel = {
-                                Text(
-                                    formatDuration(recent.intervals.sumOf { it.durationSeconds })
-                                )
-                            },
-                            colors = ChipDefaults.secondaryChipColors(),
-                            modifier = Modifier.fillMaxWidth(),
+                        val intervals = recent.toIntervals()
+                        TemplateChip(
+                            name = recent.name,
+                            intervals = intervals,
+                            onClick = { onSelect(recent.name, intervals) },
+                            showCount = false,
                         )
                     }
                 }
@@ -135,13 +129,19 @@ fun TemplateListScreen(
                 ) {
                     CompactChip(
                         onClick = onStarters,
-                        label = { Text("Starters") },
+                        label = {
+                            if (dial) Text("STARTERS", style = DialType.caption)
+                            else Text("Starters")
+                        },
                         colors = ChipDefaults.secondaryChipColors(),
                         modifier = Modifier.weight(1f),
                     )
                     CompactChip(
                         onClick = onCustom,
-                        label = { Text("Custom") },
+                        label = {
+                            if (dial) Text("CUSTOM", style = DialType.caption)
+                            else Text("Custom")
+                        },
                         colors = ChipDefaults.secondaryChipColors(),
                         modifier = Modifier.weight(1f),
                     )

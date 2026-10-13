@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,8 +20,13 @@ import androidx.wear.ambient.AmbientLifecycleObserver
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.model.Interval
+import com.august.intervaltimer.settings.WatchSettings
+import com.august.intervaltimer.timer.TimerPhase
+import com.august.intervaltimer.ui.components.LocalDial
 import com.august.intervaltimer.settings.WatchSettingsRepository
 import com.august.intervaltimer.sync.RecentTemplate
 import com.august.intervaltimer.sync.publishWatchCues
@@ -123,10 +130,20 @@ fun WearApp(isAmbient: Boolean) {
         )
     }
 
+    val settings by settingsRepository.settings.collectAsState(initial = WatchSettings())
+    val session by WorkoutSession.state.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    // During a workout the timer can't be swiped away by accident. The ways
+    // out are End, or the crown, which leaves the workout running.
+    val workoutRunning = session.intervals.isNotEmpty() && session.phase != TimerPhase.FINISHED
+    val swipeAllowed = !(backStackEntry?.destination?.route == "timer" && workoutRunning)
+
     MaterialTheme(colors = WearColors) {
+      CompositionLocalProvider(LocalDial provides (settings.style == AppStyle.DIAL)) {
         SwipeDismissableNavHost(
             navController = navController,
             startDestination = "templates",
+            userSwipeEnabled = swipeAllowed,
         ) {
             composable("templates") {
                 TemplateListScreen(
@@ -183,5 +200,6 @@ fun WearApp(isAmbient: Boolean) {
                 )
             }
         }
+      }
     }
 }

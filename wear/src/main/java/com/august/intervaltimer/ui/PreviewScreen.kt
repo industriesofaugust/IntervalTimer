@@ -30,6 +30,7 @@ import androidx.wear.compose.material.TimeText
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.ui.components.LocalDial
 
 /**
  * Shows what a workout contains — every interval, in order — before the
@@ -43,6 +44,19 @@ fun PreviewScreen(
 ) {
     val totalSeconds = intervals.sumOf { it.durationSeconds }
     val workCount = intervals.count { it.type == IntervalType.WORK }
+
+    if (LocalDial.current) {
+        // Dial: the session ring as a map of the workout, with the list below.
+        Scaffold {
+            ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
+                item { DialPreviewHeader(name = name, intervals = intervals, onStart = onStart) }
+                intervals.forEach { interval ->
+                    item { IntervalPreviewRow(interval) }
+                }
+            }
+        }
+        return
+    }
 
     Scaffold(timeText = { TimeText() }) {
         ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {

@@ -79,9 +79,10 @@ fun WearTimerScreen(
             if (dial) DialFinishedContent(state = state, live = live, onDone = onDone)
             else FinishedContent(state = state, live = live, onDone = onDone)
         isAmbient ->
-            if (dial) DialAmbientContent(state = state) else AmbientContent(state = state)
+            if (dial) DialAmbientContent(state = state, format = settings.countdownFormat)
+            else AmbientContent(state = state)
         else ->
-            if (dial) DialRunningContent(state = state, live = live)
+            if (dial) DialRunningContent(state = state, live = live, format = settings.countdownFormat)
             else RunningContent(state = state, live = live)
     }
 }

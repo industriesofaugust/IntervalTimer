@@ -41,6 +41,8 @@ import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import androidx.wear.compose.material.ToggleChip
 import com.august.intervaltimer.design.AppStyle
+import com.august.intervaltimer.design.CountdownFormat
+import com.august.intervaltimer.ui.components.SectionLabel
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchSettings
 import com.august.intervaltimer.settings.WatchSettingsRepository
@@ -79,6 +81,15 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.setKeepScreenOn(keepOn) }
     }
 
+    fun toggleCountdownFormat() {
+        val next = if (settings.value.countdownFormat == CountdownFormat.SECONDS) {
+            CountdownFormat.MINUTES_SECONDS
+        } else {
+            CountdownFormat.SECONDS
+        }
+        viewModelScope.launch { repository.setCountdownFormat(next) }
+    }
+
     fun toggleStyle() {
         val next = if (settings.value.style == AppStyle.DIAL) AppStyle.MINIMAL else AppStyle.DIAL
         viewModelScope.launch { repository.setStyle(next) }
@@ -114,7 +125,21 @@ fun WatchSettingsScreen(viewModel: WatchSettingsViewModel = viewModel()) {
 
     Scaffold(timeText = { TimeText() }) {
         ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-            item { ListHeader { Text("Settings") } }
+            item { SectionLabel("Settings") }
+            item {
+                Chip(
+                    onClick = viewModel::toggleCountdownFormat,
+                    label = { Text("Countdown") },
+                    secondaryLabel = {
+                        Text(
+                            if (settings.countdownFormat == CountdownFormat.SECONDS) "Seconds (90)"
+                            else "Minutes (1:30)"
+                        )
+                    },
+                    colors = ChipDefaults.secondaryChipColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             item {
                 Chip(
                     onClick = viewModel::toggleStyle,
