@@ -13,13 +13,18 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.12"
+        versionCode = 14
+        versionName = "0.13"
     }
 
     buildTypes {
+        // The build that goes on the devices: shrunk and optimised by R8,
+        // signed with the same debug key so it installs over earlier builds
+        // without losing data and stays paired with the other device.
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -69,6 +74,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.reorderable)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 

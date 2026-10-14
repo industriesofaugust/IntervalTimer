@@ -14,13 +14,18 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 30
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.12"
+        versionCode = 14
+        versionName = "0.13"
     }
 
     buildTypes {
+        // The build that goes on the devices: shrunk and optimised by R8,
+        // signed with the same debug key so it installs over earlier builds
+        // without losing data and stays paired with the other device.
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -33,6 +38,10 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    // The watch still targets SDK 34; don't let that lint warning block release builds.
+    lint {
+        checkReleaseBuilds = false
     }
 }
 
@@ -51,6 +60,7 @@ dependencies {
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.androidx.wear.compose.material)
+    implementation(libs.androidx.wear.compose.material3)
     implementation(libs.androidx.wear.compose.foundation)
     implementation(libs.androidx.wear.compose.navigation)
     implementation(libs.androidx.wear)

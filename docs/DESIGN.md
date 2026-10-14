@@ -54,8 +54,7 @@ look, kept as a switchable style; Dial is the default.
 
 - Home: wordmark, quick session, template cards with strip and
   `5 INTERVALS · 2:40`. Text-only bottom bar.
-- Editor: live strip under the name; two-row interval cards with a colored
-  edge; colored `+ WORK` / `+ REST`.
+- Editor: see "Template builder" below (replaced the two-row cards in v0.13).
 - Activity: first tile cycles `TODAY` / `THIS WEEK` / `THIS MONTH` and drives
   the bar chart. Second tile is `DAYS OFF`: days since the last workout, with
   its date (`--` when there is no history). History always lists everything.
@@ -65,6 +64,68 @@ look, kept as a switchable style; Dial is the default.
   line, and a labelled max point.
 - Settings: style picker, countdown format, watch cues as five-step bars,
   test on watch, phone sound, Health Connect, theme.
+
+## Phone navigation and spacing (v0.13)
+
+- Home, Activity and Settings are three pages you can swipe between. The
+  bottom bar still works and follows the swipe. Back from Activity or
+  Settings goes to Home first.
+- Page titles sit just under the status bar (about 12dp gap), not 2 bars lower.
+
+## Template builder (v0.13)
+
+Goal: a typical workout takes seconds to set up; per-interval detail is
+there when wanted, never required. Templates are still a flat list.
+
+- Pinned header: back, template name (placeholder is a generated name such as
+  `8× 0:40/0:20`, used if left blank), `SAVE` always visible, even with the
+  keyboard up. Under it the live strip and `15 INTERVALS · 7:40`.
+- New templates open already filled with 8 rounds of 0:40 work / 0:20 rest,
+  with starter chips `TABATA` `HIIT` `STRENGTH` until the list is edited.
+- Pattern tiles: `ROUNDS`, `WORK`, `REST`, each with − and + (hold to
+  repeat) and, for times, tap the value for the wheels. They act on the whole
+  list: rounds adds or removes rest+work pairs at the end; WORK/REST set
+  every interval of that type (`MIXED` when they differ).
+- Interval rows are one line (~52dp): coloured edge, number, editable name,
+  duration, drag handle. Keyboard Next jumps to the next work interval's
+  name, so a circuit is named in one typing run.
+- Tap a row to open its details below it (one at a time): work/rest, − time
+  +, duplicate, delete.
+- Drag the handle to reorder; the list scrolls by itself near the top and
+  bottom edges.
+- Footer: `+ WORK`, `+ REST`, `REPEAT ALL` (appends another copy of the
+  whole list after a rest).
+- Bottom bar: total and `SAVE & START`.
+- Names that were generated (`Work 3 of 8`, `Rest`) renumber themselves when
+  the structure changes; names you typed are kept.
+
+## Watch, version 2 (v0.13)
+
+Built with Wear Compose Material 3. One look for every menu screen; the
+Style setting (Dial / Minimal) only changes the timer face.
+
+- Black background (OLED), colour from the palette on surfaces: coral
+  primary, teal secondary, amber tertiary, warm dark containers.
+- One button family: full-width buttons 52dp high, round icon buttons 48dp
+  (pause 60dp), the main action of a screen is an edge button hugging the
+  bottom of the round screen. Labels are capitals in JetBrains Mono; names
+  are normal case in Space Grotesk.
+- The clock (TimeText) at the top of every screen except the timer.
+- Home: Resume (only while a workout runs), the last two workouts as cards
+  (name, `15 INTERVALS · 3:50`, strip), then `WORKOUTS`, `NEW`, `SETTINGS`.
+- Workouts: one list, `MINE` (from the phone) then `STARTERS`.
+- Preview: the ring with name, count and total, the interval list, and
+  `START` as the edge button.
+- New: three rows (rounds, work, rest) with − and +, tap a time for a
+  minutes:seconds picker, total, a `SAVE TO PHONE` switch, `START` as the
+  edge button.
+- Settings: Vibrate and Sound switches, each with a 5-step slider when on;
+  Keep screen on; Countdown format; Timer face.
+- Timer: unchanged layout (see Timer screens and Watch controls). The
+  controls fade in and out; End is press-and-hold in both faces.
+- Done on the finish screen goes back to Home.
+- Screens appear with no pop-in: settings and templates are loaded before
+  the first frame and kept in memory.
 
 ## Later
 
