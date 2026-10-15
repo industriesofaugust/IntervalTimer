@@ -4,10 +4,12 @@ import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchStores
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
+import com.august.intervaltimer.workout.WorkoutSession
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 import kotlinx.coroutines.delay
@@ -16,10 +18,23 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * Receives control messages from the phone: settings changes made in the
- * phone's Settings page, and "play a test sequence" requests. Runs even when
+ * phone's Settings page, "play a test sequence" requests, and the live link
+ * (a workout started on the phone, and its pauses and skips). Runs even when
  * the watch app is closed.
  */
 class PhoneListenerService : WearableListenerService() {
+
+    override fun onMessageReceived(event: MessageEvent) {
+        // Anything that does not decode is simply ignored.
+        when (event.path) {
+            LivePaths.START -> LiveLinkCodec.decodeStart(event.data)?.let {
+                WorkoutSession.onLiveStart(applicationContext, it, event.sourceNodeId)
+            }
+            LivePaths.CONTROL -> LiveLinkCodec.decodeControl(event.data)?.let {
+                WorkoutSession.onLiveControl(it)
+            }
+        }
+    }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
         for (event in dataEvents) {

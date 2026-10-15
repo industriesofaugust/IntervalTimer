@@ -2,6 +2,8 @@ package com.august.intervaltimer.timer
 
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.sync.LiveControl
+import com.august.intervaltimer.sync.applyLiveControl
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -185,5 +187,168 @@ class TimerEngineTest {
         engine.start(emptyList())
 
         assertTrue(engine.uiState.value.intervals.isEmpty())
+    }
+
+    @Test
+    fun `starting part way into the lead in shortens it`() = runTest {
+        val engine = newEngine()
+
+        engine.start(listOf(work3, rest2), elapsedMillis = 2_000)
+
+        val state = engine.uiState.value
+        assertEquals(TimerPhase.LEAD_IN, state.phase)
+        assertEquals(3_000, state.remainingMillis)
+    }
+
+    @Test
+    fun `starting past the lead in begins in the right interval`() = runTest {
+        val engine = newEngine()
+
+        // 5 s lead-in, all 3 s of work, then half a second of rest.
+        engine.start(listOf(work3, rest2), elapsedMillis = 5_000 + 3_000 + 500)
+
+        val state = engine.uiState.value
+        assertEquals(TimerPhase.RUNNING, state.phase)
+        assertEquals(rest2, state.currentInterval)
+        assertEquals(1_500, state.remainingMillis)
+    }
+
+    @Test
+    fun `starting exactly on an interval boundary begins the next one`() = runTest {
+        val engine = newEngine()
+
+        engine.start(listOf(work3, rest2), elapsedMillis = 5_000 + 3_000)
+
+        assertEquals(rest2, engine.uiState.value.currentInterval)
+        assertEquals(2_000, engine.uiState.value.remainingMillis)
+    }
+
+    @Test
+    fun `a session started late carries on and plays no cue for where it landed`() = runTest {
+        val engine = newEngine()
+        val cues = recordCues(engine)
+
+        engine.start(listOf(work3, rest2), elapsedMillis = 5_000 + 1_000)
+        runCurrent()
+        assertTrue(cues.isEmpty())
+
+        advanceTimeBy(2_050)
+        assertEquals(rest2, engine.uiState.value.currentInterval)
+    }
+
+    @Test
+    fun `starting after the session would have ended finishes it`() = runTest {
+        val engine = newEngine()
+
+        engine.start(listOf(work3, rest2), elapsedMillis = 60_000)
+        advanceTimeBy(100)
+
+        assertEquals(TimerPhase.FINISHED, engine.uiState.value.phase)
+    }
+
+    @Test
+    fun `syncTo moves to the given interval and position`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2, work4))
+
+        engine.syncTo(index = 1, remainingMillis = 1_200, paused = false)
+
+        val state = engine.uiState.value
+        assertEquals(TimerPhase.RUNNING, state.phase)
+        assertEquals(rest2, state.currentInterval)
+        assertEquals(1_200, state.remainingMillis)
+        assertFalse(state.isPaused)
+    }
+
+    @Test
+    fun `syncTo can pause and hold the time`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+
+        engine.syncTo(index = 0, remainingMillis = 2_000, paused = true)
+        advanceTimeBy(10_000)
+
+        assertTrue(engine.uiState.value.isPaused)
+        assertEquals(2_000, engine.uiState.value.remainingMillis)
+        assertEquals(TimerPhase.RUNNING, engine.uiState.value.phase)
+    }
+
+    @Test
+    fun `syncTo minus one goes back to the lead in`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+
+        engine.syncTo(index = -1, remainingMillis = 4_000, paused = false)
+
+        assertEquals(TimerPhase.LEAD_IN, engine.uiState.value.phase)
+        assertEquals(4_000, engine.uiState.value.remainingMillis)
+    }
+
+    @Test
+    fun `syncTo plays a cue only when the interval changes`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2, work4))
+        advanceTimeBy(5_050)
+        val cues = recordCues(engine)
+
+        // Already in the first interval: nothing to announce.
+        engine.syncTo(index = 0, remainingMillis = 1_000, paused = false)
+        // A new interval is announced once, however often it is repeated.
+        engine.syncTo(index = 1, remainingMillis = 2_000, paused = false)
+        engine.syncTo(index = 1, remainingMillis = 1_900, paused = true)
+        runCurrent()
+
+        assertEquals(listOf(TimerCue.REST_START), cues)
+    }
+
+    @Test
+    fun `syncTo past the last interval finishes the session`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+        advanceTimeBy(5_050)
+        val cues = recordCues(engine)
+
+        engine.syncTo(index = 2, remainingMillis = 0, paused = false)
+        runCurrent()
+
+        val state = engine.uiState.value
+        assertEquals(TimerPhase.FINISHED, state.phase)
+        assertFalse(state.endedEarly)
+        assertEquals(2, state.completedIntervals)
+        assertEquals(5, state.elapsedSecondsAtEnd)
+        assertEquals(listOf(TimerCue.FINISH), cues)
+    }
+
+    @Test
+    fun `syncTo is ignored once the session is over`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3))
+        advanceTimeBy(9_000)
+        assertEquals(TimerPhase.FINISHED, engine.uiState.value.phase)
+
+        engine.syncTo(index = 0, remainingMillis = 1_000, paused = false)
+
+        assertEquals(TimerPhase.FINISHED, engine.uiState.value.phase)
+    }
+
+    @Test
+    fun `a snapshot from the other device is applied and an early end ends the session`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2, work4))
+        val now = 1_000_000L
+
+        engine.applyLiveControl(
+            LiveControl("a", index = 1, remainingMillis = 1_500, paused = false, sentAtEpochMillis = now - 100),
+            nowEpochMillis = now,
+        )
+        assertEquals(rest2, engine.uiState.value.currentInterval)
+        assertEquals(1_400, engine.uiState.value.remainingMillis)
+
+        engine.applyLiveControl(
+            LiveControl("a", index = 1, remainingMillis = 1_400, paused = false, ended = true, sentAtEpochMillis = now),
+            nowEpochMillis = now,
+        )
+        assertTrue(engine.uiState.value.endedEarly)
+        assertEquals(1, engine.uiState.value.completedIntervals)
     }
 }

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -46,6 +48,13 @@ import com.august.intervaltimer.design.ringSegments
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.sync.LiveMetricsUpdate
+import com.august.intervaltimer.sync.caloriesText
+import com.august.intervaltimer.sync.heartRateText
+import com.august.intervaltimer.sync.stepsText
+import com.august.intervaltimer.ui.theme.captionStyle
+import com.august.intervaltimer.ui.theme.figureStyle
+import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
 import com.august.intervaltimer.ui.components.SessionRing
@@ -81,6 +90,7 @@ internal fun DialRunningContent(
     state: TimerUiState,
     sessionName: String?,
     format: CountdownFormat,
+    liveMetrics: LiveMetricsUpdate?,
     onTogglePause: () -> Unit,
     onSkip: () -> Unit,
     onEnd: () -> Unit,
@@ -107,6 +117,8 @@ internal fun DialRunningContent(
         )
         Spacer(Modifier.weight(1f))
 
+        LiveMetricsRow(liveMetrics, Modifier.fillMaxWidth().widthIn(max = 340.dp))
+        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -160,6 +172,17 @@ internal fun DialRunningContent(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        // A fixed-height slot, so the ring does not move when the watch's numbers arrive.
+        Box(modifier = Modifier.height(24.dp), contentAlignment = Alignment.Center) {
+            liveMetrics?.stepsText()?.let {
+                Text(
+                    text = it,
+                    style = DialType.caption,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
                 )
             }
         }
@@ -351,5 +374,33 @@ private fun StatLine(label: String, value: String) {
         )
         Spacer(Modifier.weight(1f))
         Text(text = value, style = DialType.figure, color = MaterialTheme.colorScheme.onBackground)
+    }
+}
+
+/** The watch's heart rate on the left and calories on the right, just above the dial. */
+@Composable
+internal fun LiveMetricsRow(metrics: LiveMetricsUpdate?, modifier: Modifier = Modifier) {
+    // Fixed height, so the dial doesn't move when the first numbers arrive.
+    Row(modifier = modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically) {
+        metrics?.heartRateText()?.let {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "Heart rate",
+                tint = typeColor(IntervalType.WORK),
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(text = it, style = figureStyle(), color = MaterialTheme.colorScheme.onBackground)
+        }
+        Spacer(Modifier.weight(1f))
+        metrics?.caloriesText()?.let {
+            Text(text = it, style = figureStyle(), color = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "kcal".labelCase(),
+                style = captionStyle(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

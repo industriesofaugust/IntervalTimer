@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
@@ -45,10 +46,13 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
+import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.recordPhoneWorkout
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.sync.LiveMetricsUpdate
+import com.august.intervaltimer.sync.stepsText
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.timer.TimerPhase
@@ -89,25 +93,47 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
     }
 
     // Save the workout to History once, when it finishes or is ended early.
+    // If the watch is running it too, the watch saves it (with heart rate).
     var saved by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.phase) {
         if (state.phase == TimerPhase.FINISHED && !saved && state.elapsedSecondsAtEnd > 0) {
             saved = true
-            app.recordPhoneWorkout(sessionName, state)
+            if (!PhoneLiveLink.linked.value) app.recordPhoneWorkout(sessionName, state)
         }
     }
 
     if (state.intervals.isEmpty()) return
 
     KeepScreenOn()
-    BackHandler {
+    val metrics by PhoneLiveLink.metrics.collectAsState()
+
+    // Leaving also ends the workout on the watch, if it is still going.
+    val onDone = {
+        PhoneLiveLink.leave(viewModel.uiState.value)
         viewModel.stop()
         onExit()
     }
+    BackHandler(onBack = onDone)
 
-    val onDone = {
-        viewModel.stop()
-        onExit()
+    // The user's own taps are passed on to the watch. What the watch sends
+    // goes straight to the timer, so nothing is sent back.
+    val onTogglePause = {
+        viewModel.togglePause()
+        PhoneLiveLink.sendState(viewModel.uiState.value)
+    }
+    val onSkip = {
+        viewModel.skip()
+        PhoneLiveLink.sendState(viewModel.uiState.value)
+    }
+    val onEnd = {
+        val before = viewModel.uiState.value
+        // During get-ready nothing has been done, so there is nothing to summarize.
+        if (before.phase == TimerPhase.LEAD_IN) {
+            onDone()
+        } else {
+            viewModel.endEarly()
+            PhoneLiveLink.sendEnd(before)
+        }
     }
     when {
         isDial() && state.phase == TimerPhase.FINISHED ->
@@ -117,24 +143,29 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
                 state = state,
                 sessionName = sessionName,
                 format = settings.countdownFormat,
-                onTogglePause = viewModel::togglePause,
-                onSkip = viewModel::skip,
-                onEnd = {
-                    // During get-ready nothing has been done, so there is
-                    // nothing to summarize.
-                    if (state.phase == TimerPhase.LEAD_IN) onDone() else viewModel.endEarly()
-                },
+                liveMetrics = metrics,
+                onTogglePause = onTogglePause,
+                onSkip = onSkip,
+                onEnd = onEnd,
             )
         state.phase == TimerPhase.FINISHED -> FinishedContent(state = state, onDone = onDone)
-        else -> RunningContent(state = state, viewModel = viewModel, onExit = onExit)
+        else -> RunningContent(
+            state = state,
+            liveMetrics = metrics,
+            onTogglePause = onTogglePause,
+            onSkip = onSkip,
+            onEnd = onEnd,
+        )
     }
 }
 
 @Composable
 private fun RunningContent(
     state: TimerUiState,
-    viewModel: TimerViewModel,
-    onExit: () -> Unit,
+    liveMetrics: LiveMetricsUpdate?,
+    onTogglePause: () -> Unit,
+    onSkip: () -> Unit,
+    onEnd: () -> Unit,
 ) {
     val accent by animateColorAsState(
         targetValue = stateAccent(state),
@@ -171,6 +202,7 @@ private fun RunningContent(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 PhaseChip(text = phaseLabel(state), accent = accent)
+                LiveMetricsRow(liveMetrics, Modifier.width(290.dp))
                 Box(
                     modifier = Modifier.size(290.dp),
                     contentAlignment = Alignment.Center,
@@ -200,17 +232,25 @@ private fun RunningContent(
             }
         }
 
+        // A fixed-height slot, so the timer does not move when the watch's numbers arrive.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            liveMetrics?.stepsText()?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(
-                onClick = {
-                    if (state.phase == TimerPhase.LEAD_IN) {
-                        // Nothing has been done yet, so there is nothing to summarize.
-                        viewModel.stop()
-                        onExit()
-                    } else {
-                        viewModel.endEarly()
-                    }
-                },
+                onClick = onEnd,
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp),
@@ -219,7 +259,7 @@ private fun RunningContent(
                 Text("End")
             }
             Button(
-                onClick = viewModel::togglePause,
+                onClick = onTogglePause,
                 modifier = Modifier
                     .weight(2f)
                     .height(56.dp),
@@ -228,7 +268,7 @@ private fun RunningContent(
                 Text(if (state.isPaused) "Resume" else "Pause")
             }
             OutlinedButton(
-                onClick = viewModel::skip,
+                onClick = onSkip,
                 modifier = Modifier
                     .weight(1f)
                     .height(56.dp),

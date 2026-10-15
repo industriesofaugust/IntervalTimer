@@ -22,6 +22,8 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val style: AppStyle = AppStyle.DIAL,
     val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
+    /** Phone workouts also run on the watch (the live link). */
+    val useWatch: Boolean = true,
 )
 
 private val Context.dataStore by preferencesDataStore(name = "app_settings")
@@ -36,6 +38,7 @@ class AppSettingsRepository(private val context: Context) {
         val themeMode = stringPreferencesKey("theme_mode")
         val style = stringPreferencesKey("style")
         val countdownFormat = stringPreferencesKey("countdown_format")
+        val useWatch = booleanPreferencesKey("use_watch")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -53,6 +56,7 @@ class AppSettingsRepository(private val context: Context) {
             countdownFormat = prefs[Keys.countdownFormat]
                 ?.let { runCatching { CountdownFormat.valueOf(it) }.getOrNull() }
                 ?: CountdownFormat.SECONDS,
+            useWatch = prefs[Keys.useWatch] ?: true,
         )
     }
 
@@ -78,6 +82,10 @@ class AppSettingsRepository(private val context: Context) {
 
     suspend fun setCountdownFormat(format: CountdownFormat) {
         context.dataStore.edit { it[Keys.countdownFormat] = format.name }
+    }
+
+    suspend fun setUseWatch(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.useWatch] = enabled }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

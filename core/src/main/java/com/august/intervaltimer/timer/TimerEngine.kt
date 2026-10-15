@@ -98,13 +98,49 @@ class TimerEngine(
 
     private var ticker: Job? = null
 
-    fun start(intervals: List<Interval>) {
+    /**
+     * [elapsedMillis] starts the session that far in, so a second device can
+     * join a session that began a moment ago. No cue is played for the
+     * interval it lands in.
+     */
+    fun start(intervals: List<Interval>, elapsedMillis: Long = 0L) {
         if (intervals.isEmpty()) return
-        _uiState.value = TimerUiState(
-            intervals = intervals,
-            remainingMillis = TimerUiState.LEAD_IN_MILLIS,
-        )
+        _uiState.value = stateAfter(intervals, elapsedMillis)
         startTicker()
+    }
+
+    /**
+     * Snaps to a position reported by another device. [index] -1 is the
+     * get-ready lead-in; an index past the last interval finishes the
+     * session. The cue for an interval is played only if this moves into a
+     * different interval than the engine was already in, so a device that
+     * already got there by itself stays quiet.
+     */
+    fun syncTo(index: Int, remainingMillis: Long, paused: Boolean) {
+        val state = _uiState.value
+        if (state.intervals.isEmpty() || state.phase == TimerPhase.FINISHED) return
+        if (index >= state.intervals.size) {
+            finish(state)
+            return
+        }
+        if (index < 0) {
+            _uiState.value = state.copy(
+                phase = TimerPhase.LEAD_IN,
+                currentIndex = 0,
+                remainingMillis = remainingMillis.coerceIn(0L, TimerUiState.LEAD_IN_MILLIS),
+                isPaused = paused,
+            )
+            return
+        }
+        val interval = state.intervals[index]
+        val movedToNewInterval = state.phase != TimerPhase.RUNNING || state.currentIndex != index
+        if (movedToNewInterval) _cues.tryEmit(startCue(interval))
+        _uiState.value = state.copy(
+            phase = TimerPhase.RUNNING,
+            currentIndex = index,
+            remainingMillis = remainingMillis.coerceIn(0L, interval.durationSeconds * 1000L),
+            isPaused = paused,
+        )
     }
 
     fun togglePause() {
@@ -183,27 +219,63 @@ class TimerEngine(
         val nextIndex = if (state.phase == TimerPhase.LEAD_IN) 0 else state.currentIndex + 1
         val next = state.intervals.getOrNull(nextIndex)
         if (next == null) {
-            _cues.tryEmit(TimerCue.FINISH)
-            _uiState.value = state.copy(
-                phase = TimerPhase.FINISHED,
-                remainingMillis = 0L,
-                isPaused = false,
-                completedIntervals = state.intervals.size,
-                elapsedSecondsAtEnd = (state.totalPlannedMillis / 1000).toInt(),
-            )
-            ticker?.cancel()
+            finish(state)
             return
         }
-        _cues.tryEmit(
-            when (next.type) {
-                IntervalType.WORK -> TimerCue.WORK_START
-                IntervalType.REST -> TimerCue.REST_START
-            }
-        )
+        _cues.tryEmit(startCue(next))
         _uiState.value = state.copy(
             phase = TimerPhase.RUNNING,
             currentIndex = nextIndex,
             remainingMillis = next.durationSeconds * 1000L + carryMillis,
+        )
+    }
+
+    /** The session ran to its end. */
+    private fun finish(state: TimerUiState) {
+        _cues.tryEmit(TimerCue.FINISH)
+        _uiState.value = state.copy(
+            phase = TimerPhase.FINISHED,
+            remainingMillis = 0L,
+            isPaused = false,
+            completedIntervals = state.intervals.size,
+            elapsedSecondsAtEnd = (state.totalPlannedMillis / 1000).toInt(),
+        )
+        ticker?.cancel()
+    }
+
+    private fun startCue(interval: Interval): TimerCue = when (interval.type) {
+        IntervalType.WORK -> TimerCue.WORK_START
+        IntervalType.REST -> TimerCue.REST_START
+    }
+
+    /** Where a session stands after [elapsedMillis] of running from the very start. */
+    private fun stateAfter(intervals: List<Interval>, elapsedMillis: Long): TimerUiState {
+        val elapsed = elapsedMillis.coerceAtLeast(0L)
+        if (elapsed < TimerUiState.LEAD_IN_MILLIS) {
+            return TimerUiState(
+                intervals = intervals,
+                remainingMillis = TimerUiState.LEAD_IN_MILLIS - elapsed,
+            )
+        }
+        var intoIntervals = elapsed - TimerUiState.LEAD_IN_MILLIS
+        intervals.forEachIndexed { index, interval ->
+            val duration = interval.durationSeconds * 1000L
+            if (intoIntervals < duration) {
+                return TimerUiState(
+                    intervals = intervals,
+                    currentIndex = index,
+                    remainingMillis = duration - intoIntervals,
+                    phase = TimerPhase.RUNNING,
+                )
+            }
+            intoIntervals -= duration
+        }
+        // Past the end: sit on the last millisecond, so the next tick finishes.
+        return TimerUiState(
+            intervals = intervals,
+            currentIndex = intervals.lastIndex,
+            remainingMillis = 1L,
+            phase = TimerPhase.RUNNING,
         )
     }
 }

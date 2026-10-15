@@ -171,6 +171,10 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
     fun setCountdownFormat(format: CountdownFormat) {
         viewModelScope.launch { repository.setCountdownFormat(format) }
     }
+
+    fun setUseWatch(enabled: Boolean) {
+        viewModelScope.launch { repository.setUseWatch(enabled) }
+    }
 }
 
 /**
@@ -324,6 +328,18 @@ fun PhoneSettingsScreen(
         SectionHeader("Watch cues")
         Spacer(Modifier.height(8.dp))
         SettingsCard {
+            ToggleRow(
+                title = "Use watch",
+                checked = settings.useWatch,
+                onCheckedChange = viewModel::setUseWatch,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Phone workouts also run on the watch",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(16.dp))
             if (!watchCues.loaded) {
                 Text(
                     text = "Open Interval Timer on your watch once to load its settings here.",

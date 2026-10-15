@@ -39,7 +39,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.august.intervaltimer.data.AppSettings
+import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.ThemeMode
+import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.ActivityScreen
 import com.august.intervaltimer.ui.EditorScreen
@@ -95,6 +97,13 @@ fun IntervalTimerApp() {
     val timerViewModel: TimerViewModel = viewModel()
     // Name of the workout being run, saved with it in History.
     var sessionName by rememberSaveable { mutableStateOf<String?>(null) }
+
+    fun startWorkout(name: String, intervals: List<Interval>) {
+        sessionName = name
+        timerViewModel.start(intervals)
+        // Asks the watch to run it too, unless "Use watch" is off.
+        PhoneLiveLink.begin(app, timerViewModel, name, intervals, settings.useWatch)
+    }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -152,8 +161,7 @@ fun IntervalTimerApp() {
                                 onNewTemplate = { navController.navigate("editor") },
                                 onEditTemplate = { id -> navController.navigate("editor?templateId=$id") },
                                 onPlayTemplate = { name, intervals ->
-                                    sessionName = name
-                                    timerViewModel.start(intervals)
+                                    startWorkout(name, intervals)
                                     navController.navigate("timer")
                                 },
                             )
@@ -167,8 +175,7 @@ fun IntervalTimerApp() {
                 composable("quickbuild") {
                     QuickBuildScreen(
                         onStart = { intervals ->
-                            sessionName = "Quick session"
-                            timerViewModel.start(intervals)
+                            startWorkout("Quick session", intervals)
                             navController.navigate("timer")
                         },
                         onCustomize = { rounds, work, rest ->
@@ -191,8 +198,7 @@ fun IntervalTimerApp() {
                             navController.popBackStack(route = "home", inclusive = false)
                         },
                         onSaveAndStart = { name, intervals ->
-                            sessionName = name
-                            timerViewModel.start(intervals)
+                            startWorkout(name, intervals)
                             // Drop the editor, so finishing the workout returns Home.
                             navController.navigate("timer") { popUpTo("home") }
                         },

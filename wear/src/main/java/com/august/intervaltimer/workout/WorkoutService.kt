@@ -73,7 +73,13 @@ class WorkoutService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Must happen promptly after the service is started.
-        startInForeground(buildNotification(WorkoutSession.state.value))
+        if (!startInForeground(buildNotification(WorkoutSession.state.value))) {
+            // Android refused (for instance a workout joined from the phone
+            // while the watch app was in the background). Not starting the
+            // foreground service in time would crash the app, so give up.
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         if (!WorkoutSession.inProgress) {
             shutDown()
@@ -94,6 +100,13 @@ class WorkoutService : Service() {
         }
         scope.launch {
             WorkoutSession.cues.collect { playCue(it) }
+        }
+        // Does nothing unless the phone started this workout.
+        scope.launch {
+            while (true) {
+                delay(LIVE_METRICS_MILLIS)
+                WorkoutSession.sendLiveMetrics()
+            }
         }
         scope.launch {
             WorkoutSession.state
@@ -137,19 +150,22 @@ class WorkoutService : Service() {
         }
     }
 
-    private fun startInForeground(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= 34) {
-            // The "health" type is only allowed once a sensor permission has
-            // been granted. Without one the timer still runs, as a plain
-            // special-use service with no heart rate.
-            val type = if (hasSensorPermission()) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
-            } else {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            }
-            startForeground(NOTIFICATION_ID, notification, type)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+    /** False if Android would not let the service run in the foreground at all. */
+    private fun startInForeground(notification: Notification): Boolean {
+        if (Build.VERSION.SDK_INT < 34) {
+            return runCatching { startForeground(NOTIFICATION_ID, notification) }.isSuccess
+        }
+        // The "health" type is only allowed once a sensor permission has been
+        // granted, and Android may still refuse it when the service was
+        // started from the background (a workout joined from the phone).
+        // Special use has neither condition, so the timer keeps running as
+        // that, just without heart rate.
+        val types = listOfNotNull(
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH.takeIf { hasSensorPermission() },
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+        )
+        return types.any { type ->
+            runCatching { startForeground(NOTIFICATION_ID, notification, type) }.isSuccess
         }
     }
 
@@ -226,6 +242,7 @@ class WorkoutService : Service() {
     private companion object {
         const val CHANNEL_ID = "workout"
         const val NOTIFICATION_ID = 1
+        const val LIVE_METRICS_MILLIS = 5_000L
         // A safety net so a forgotten workout can't hold the watch awake forever.
         const val WAKE_LOCK_LIMIT_MILLIS = 6 * 60 * 60 * 1000L
     }

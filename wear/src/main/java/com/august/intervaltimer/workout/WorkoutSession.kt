@@ -7,9 +7,18 @@ import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.metrics.WorkoutMetricsRecorder
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.sync.LiveAck
+import com.august.intervaltimer.sync.LiveControl
+import com.august.intervaltimer.sync.LiveLinkCodec
+import com.august.intervaltimer.sync.LiveMetricsUpdate
+import com.august.intervaltimer.sync.LivePaths
+import com.august.intervaltimer.sync.LiveStart
 import com.august.intervaltimer.sync.ResultSyncCodec
 import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.sync.applyLiveControl
+import com.august.intervaltimer.sync.toDomainIntervals
+import com.august.intervaltimer.sync.toLiveControl
 import com.august.intervaltimer.sync.toSyncedIntervals
 import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.timer.TimerEngine
@@ -60,22 +69,136 @@ object WorkoutSession {
         scope.launch { newRecorder.live.collect { _live.value = it } }
     }
 
+    /** A workout the user started on the watch. */
     fun start(context: Context, name: String, intervals: List<Interval>) {
         if (intervals.isEmpty()) return
+        link = null
+        begin(context, name, intervals, elapsedMillis = 0L)
+    }
+
+    /** False if the foreground service could not be started. */
+    private fun begin(
+        context: Context,
+        name: String,
+        intervals: List<Interval>,
+        elapsedMillis: Long,
+    ): Boolean {
         init(context)
         sessionName = name
         resultPublished = false
-        engine.start(intervals)
+        engine.start(intervals, elapsedMillis)
         val app = context.applicationContext
-        ContextCompat.startForegroundService(app, Intent(app, WorkoutService::class.java))
+        return runCatching {
+            ContextCompat.startForegroundService(app, Intent(app, WorkoutService::class.java))
+        }.isSuccess
     }
 
-    fun togglePause() = engine.togglePause()
-    fun skip() = engine.skip()
-    fun endEarly() = engine.endEarly()
+    // The user's own taps are also sent to the phone when linked. Messages
+    // from the phone go straight to the engine, so nothing is sent back.
+
+    fun togglePause() {
+        val wasRunning = inProgress
+        engine.togglePause()
+        if (wasRunning) sendControl(state.value)
+    }
+
+    fun skip() {
+        val wasRunning = inProgress
+        engine.skip()
+        if (wasRunning) sendControl(state.value)
+    }
+
+    fun endEarly() {
+        val wasRunning = inProgress
+        val before = state.value
+        engine.endEarly()
+        // Sent from just before ending, so the phone ends at the same place.
+        if (wasRunning) sendControl(before, ended = true)
+    }
 
     /** Dismisses the finished summary and returns to "no workout". */
-    fun clear() = engine.stop()
+    fun clear() {
+        link = null
+        engine.stop()
+    }
+
+    // --- The live link: a workout the phone started and the watch joined. ---
+
+    private class Link(val id: String, val phoneNodeId: String)
+
+    private var link: Link? = null
+    private var lastControlSentAt = 0L
+
+    /**
+     * The phone started a workout. Joins it, lined up with the phone's clock,
+     * and answers the phone either way. Safe to call from any thread.
+     */
+    fun onLiveStart(context: Context, message: LiveStart, phoneNodeId: String) {
+        scope.launch {
+            val accepted = join(context, message, phoneNodeId)
+            val ack = LiveAck(message.linkId, accepted)
+            sendTo(context.applicationContext, phoneNodeId, LivePaths.ACK, LiveLinkCodec.encode(ack))
+        }
+    }
+
+    private fun join(context: Context, message: LiveStart, phoneNodeId: String): Boolean {
+        // The same message arriving twice is not a second workout.
+        if (inProgress && link?.id == message.linkId) return true
+        // The user's own workout wins.
+        if (inProgress) return false
+
+        val intervals = message.intervals.toDomainIntervals()
+        val elapsed = System.currentTimeMillis() - message.startedAtEpochMillis
+        val totalMillis = TimerUiState.LEAD_IN_MILLIS + intervals.sumOf { it.durationSeconds * 1000L }
+        if (intervals.isEmpty() || elapsed >= totalMillis) return false
+
+        link = Link(message.linkId, phoneNodeId)
+        lastControlSentAt = 0L
+        if (begin(context, message.sessionName, intervals, elapsed)) return true
+        // Android did not allow the foreground service; carry on without the watch.
+        link = null
+        engine.stop()
+        return false
+    }
+
+    /** The phone paused, resumed, skipped or ended. Safe to call from any thread. */
+    fun onLiveControl(control: LiveControl) {
+        scope.launch {
+            val current = link ?: return@launch
+            // A message that crossed with a newer one is stale.
+            if (control.linkId != current.id || control.sentAtEpochMillis < lastControlSentAt) {
+                return@launch
+            }
+            lastControlSentAt = control.sentAtEpochMillis
+            engine.applyLiveControl(control, System.currentTimeMillis())
+        }
+    }
+
+    /** Called every few seconds by [WorkoutService] while a linked workout runs. */
+    fun sendLiveMetrics() {
+        val current = link ?: return
+        if (!inProgress) return
+        val metrics = live.value
+        val update = LiveMetricsUpdate(current.id, metrics.currentHeartRate, metrics.calories, metrics.steps)
+        send(LivePaths.METRICS, LiveLinkCodec.encode(update))
+    }
+
+    private fun sendControl(snapshotOf: TimerUiState, ended: Boolean = false) {
+        val current = link ?: return
+        val control = snapshotOf.toLiveControl(current.id, System.currentTimeMillis(), ended)
+        send(LivePaths.CONTROL, LiveLinkCodec.encode(control))
+    }
+
+    private fun send(path: String, bytes: ByteArray) {
+        val context = appContext ?: return
+        val nodeId = link?.phoneNodeId ?: return
+        sendTo(context, nodeId, path, bytes)
+    }
+
+    // Best effort: if the phone is out of reach the workout simply goes on alone.
+    private fun sendTo(context: Context, nodeId: String, path: String, bytes: ByteArray) {
+        runCatching { Wearable.getMessageClient(context).sendMessage(nodeId, path, bytes) }
+    }
 
     /**
      * The ring only needs smooth updates while someone is looking at it.
@@ -106,6 +229,8 @@ object WorkoutSession {
         val finished = state.value
 
         val metrics = activeRecorder.stop()
+        // Ended during get-ready: nothing was done, so there is nothing to save.
+        if (finished.elapsedSecondsAtEnd == 0) return
         val completedAt = System.currentTimeMillis()
         // If the user ended early, only count what was actually done.
         val completedList =

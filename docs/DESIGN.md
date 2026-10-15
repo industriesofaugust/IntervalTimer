@@ -128,7 +128,20 @@ Style setting (Dial / Minimal) only changes the timer face.
 - Screens appear with no pop-in: settings and templates are loaded before
   the first frame and kept in memory.
 
-## Later
+## Live link (v0.14)
 
-- Live link: starting a workout on the phone also starts sensor recording on
-  the watch, which vibrates the cues and streams heart rate and calories back.
+Starting a workout on the phone also runs it on the watch.
+
+- Any phone start (template play, quick session, SAVE & START) asks the
+  watch to join. A setting on the phone, `USE WATCH` (default on), turns
+  this off.
+- The watch runs the same session in step with the phone: its own timer,
+  sensors recording, and its cues (vibration/sound per the watch settings).
+  It shows as an ongoing workout; opening the app shows the normal timer.
+- Pause, resume, skip and end work from either device and apply to both.
+- Under the phone ring: a quiet row `♥ 128 · 45 KCAL`, updated every few
+  seconds while the watch sends data; hidden when there is none.
+- One history entry per workout: the watch's result (with the heart-rate
+  chart) when the watch joined, otherwise the phone's own as before.
+- If the watch is out of reach, busy with its own workout, or drops out,
+  the phone carries on alone exactly as before.
