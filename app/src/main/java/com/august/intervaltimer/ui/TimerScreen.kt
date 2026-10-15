@@ -159,16 +159,6 @@ private fun RunningContent(
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
             strokeCap = StrokeCap.Round,
         )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = when (state.phase) {
-                TimerPhase.LEAD_IN -> "${state.intervals.size} intervals ahead"
-                else -> "Interval ${state.currentIndex + 1} of ${state.intervals.size}"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-        )
 
         Box(
             modifier = Modifier

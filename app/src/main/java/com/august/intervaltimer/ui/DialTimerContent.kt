@@ -53,13 +53,12 @@ import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.readyColor
 import com.august.intervaltimer.ui.theme.typeColor
 
-/** "WORK 3/5": the phase and where we are in the session. */
+/** Just "WORK" or "REST", so attention stays on the present interval. */
 private fun dialLabel(state: TimerUiState): String = when {
     state.isPaused -> "PAUSED"
     state.phase == TimerPhase.LEAD_IN -> "GET READY"
     else -> {
-        val phase = if (state.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
-        "$phase ${state.currentIndex + 1}/${state.intervals.size}"
+        if (state.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
     }
 }
 
