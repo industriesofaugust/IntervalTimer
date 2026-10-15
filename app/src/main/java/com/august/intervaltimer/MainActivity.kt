@@ -2,11 +2,15 @@ package com.august.intervaltimer
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
@@ -21,14 +25,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -48,6 +51,7 @@ import com.august.intervaltimer.ui.WorkoutDetailScreen
 import com.august.intervaltimer.ui.components.DialBottomBar
 import com.august.intervaltimer.ui.theme.IntervalTimerTheme
 import com.august.intervaltimer.ui.theme.isDial
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,15 +64,15 @@ class MainActivity : ComponentActivity() {
 }
 
 private data class TopLevelPage(
-    val route: String,
     val label: String,
     val icon: ImageVector,
 )
 
+// In swipe order: the index here is the page number in the pager.
 private val topLevelPages = listOf(
-    TopLevelPage("home", "Home", Icons.Filled.Home),
-    TopLevelPage("activity", "Activity", Icons.Filled.BarChart),
-    TopLevelPage("settings", "Settings", Icons.Filled.Settings),
+    TopLevelPage("Home", Icons.Filled.Home),
+    TopLevelPage("Activity", Icons.Filled.BarChart),
+    TopLevelPage("Settings", Icons.Filled.Settings),
 )
 
 @Composable
@@ -82,6 +86,10 @@ fun IntervalTimerApp() {
     }
 
     val navController = rememberNavController()
+    // Lives out here so the bottom bar can read it, and so the page you were
+    // on is still selected after visiting a detail screen and coming back.
+    val pagerState = rememberPagerState { topLevelPages.size }
+    val scope = rememberCoroutineScope()
     // One timer for the whole app: whichever screen starts a session hands
     // its intervals to this ViewModel, then navigates to the timer screen.
     val timerViewModel: TimerViewModel = viewModel()
@@ -90,7 +98,13 @@ fun IntervalTimerApp() {
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showBottomBar = topLevelPages.any { it.route == currentRoute }
+    val showBottomBar = currentRoute == "home"
+
+    // Back on Activity or Settings returns to the first page. Only enabled on
+    // "home", so it never takes back presses from the other screens.
+    BackHandler(enabled = showBottomBar && pagerState.currentPage != 0) {
+        scope.launch { pagerState.animateScrollToPage(0) }
+    }
 
     IntervalTimerTheme(darkTheme = darkTheme, style = settings.style) {
         Scaffold(
@@ -98,16 +112,16 @@ fun IntervalTimerApp() {
             bottomBar = {
                 if (showBottomBar && isDial()) {
                     DialBottomBar(
-                        pages = topLevelPages.map { it.route to it.label },
-                        currentRoute = currentRoute,
-                        onSelect = { navController.navigateTopLevel(it) },
+                        labels = topLevelPages.map { it.label },
+                        selectedIndex = pagerState.currentPage,
+                        onSelect = { scope.launch { pagerState.animateScrollToPage(it) } },
                     )
                 } else if (showBottomBar) {
                     NavigationBar {
-                        topLevelPages.forEach { page ->
+                        topLevelPages.forEachIndexed { index, page ->
                             NavigationBarItem(
-                                selected = currentRoute == page.route,
-                                onClick = { navController.navigateTopLevel(page.route) },
+                                selected = pagerState.currentPage == index,
+                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                                 icon = { Icon(page.icon, contentDescription = null) },
                                 label = { Text(page.label) },
                             )
@@ -121,27 +135,34 @@ fun IntervalTimerApp() {
                 startDestination = "home",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(innerPadding)
+                    // The screens add their own safeDrawingPadding(); this stops
+                    // them re-adding the insets innerPadding already covers.
+                    .consumeWindowInsets(innerPadding),
             ) {
                 composable("home") {
-                    LibraryScreen(
-                        onQuickSession = { navController.navigate("quickbuild") },
-                        onNewTemplate = { navController.navigate("editor") },
-                        onEditTemplate = { id -> navController.navigate("editor?templateId=$id") },
-                        onPlayTemplate = { name, intervals ->
-                            sessionName = name
-                            timerViewModel.start(intervals)
-                            navController.navigate("timer")
-                        },
-                    )
-                }
-                composable("activity") {
-                    ActivityScreen(
-                        onOpenWorkout = { id -> navController.navigate("workout/$id") },
-                    )
-                }
-                composable("settings") {
-                    PhoneSettingsScreen()
+                    HorizontalPager(
+                        state = pagerState,
+                        beyondViewportPageCount = 1,
+                        modifier = Modifier.fillMaxSize(),
+                    ) { page ->
+                        when (page) {
+                            0 -> LibraryScreen(
+                                onQuickSession = { navController.navigate("quickbuild") },
+                                onNewTemplate = { navController.navigate("editor") },
+                                onEditTemplate = { id -> navController.navigate("editor?templateId=$id") },
+                                onPlayTemplate = { name, intervals ->
+                                    sessionName = name
+                                    timerViewModel.start(intervals)
+                                    navController.navigate("timer")
+                                },
+                            )
+                            1 -> ActivityScreen(
+                                onOpenWorkout = { id -> navController.navigate("workout/$id") },
+                            )
+                            else -> PhoneSettingsScreen()
+                        }
+                    }
                 }
                 composable("quickbuild") {
                     QuickBuildScreen(
@@ -169,6 +190,12 @@ fun IntervalTimerApp() {
                         onSaved = {
                             navController.popBackStack(route = "home", inclusive = false)
                         },
+                        onSaveAndStart = { name, intervals ->
+                            sessionName = name
+                            timerViewModel.start(intervals)
+                            // Drop the editor, so finishing the workout returns Home.
+                            navController.navigate("timer") { popUpTo("home") }
+                        },
                     )
                 }
                 composable(
@@ -190,14 +217,5 @@ fun IntervalTimerApp() {
                 }
             }
         }
-    }
-}
-
-/** Standard bottom-bar navigation: one copy of each page, state preserved. */
-private fun NavHostController.navigateTopLevel(route: String) {
-    navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
     }
 }

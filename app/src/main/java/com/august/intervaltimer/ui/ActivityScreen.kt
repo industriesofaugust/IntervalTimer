@@ -129,7 +129,7 @@ fun ActivityScreen(
     ) {
         item {
             Column {
-                Spacer(Modifier.height(40.dp))
+                Spacer(Modifier.height(12.dp))
                 PageTitle("Activity")
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -1,9 +1,9 @@
 package com.august.intervaltimer.ui
 
-import android.app.Application
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,207 +17,74 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.design.intervalCountLabel
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
-import com.august.intervaltimer.model.MAX_INTERVAL_SECONDS
-import com.august.intervaltimer.model.MIN_INTERVAL_SECONDS
-import com.august.intervaltimer.design.intervalCountLabel
+import com.august.intervaltimer.model.MAX_ROUNDS
+import com.august.intervaltimer.model.commonDuration
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.model.lastDurationOf
+import com.august.intervaltimer.model.starterTemplates
+import com.august.intervaltimer.model.withGeneratedNames
+import com.august.intervaltimer.model.workCount
 import com.august.intervaltimer.ui.components.SessionStrip
-import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.editor.EditorRow
+import com.august.intervaltimer.ui.editor.EditorViewModel
+import com.august.intervaltimer.ui.editor.InlineTextField
+import com.august.intervaltimer.ui.editor.IntervalRow
+import com.august.intervaltimer.ui.editor.PatternTile
+import com.august.intervaltimer.ui.editor.buttonStyle
+import com.august.intervaltimer.ui.editor.labelStyle
 import com.august.intervaltimer.ui.theme.captionStyle
 import com.august.intervaltimer.ui.theme.figureStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
+import com.august.intervaltimer.ui.theme.nameStyle
 import com.august.intervaltimer.ui.theme.typeColor
-import com.august.intervaltimer.model.stepDuration
-import com.august.intervaltimer.ui.theme.Coral
-import com.august.intervaltimer.ui.theme.CoralLight
-import com.august.intervaltimer.ui.theme.Teal
-import com.august.intervaltimer.ui.theme.TealLight
-import com.august.intervaltimer.ui.theme.isAppInDarkTheme
-import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
-data class EditorRow(
-    val key: Long,
-    val name: String,
-    val type: IntervalType,
-    val durationSeconds: Int,
-)
-
-class EditorViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
-
-    private val repository = (app as TimerApp).templatesRepository
-    private val templateId: Long = handle.get<Long>("templateId") ?: 0L
-    private var nextKey = 0L
-
-    var name by mutableStateOf("")
-    val rows = mutableStateListOf<EditorRow>()
-    val isExisting: Boolean get() = templateId != 0L
-    val totalSeconds: Int get() = rows.sumOf { it.durationSeconds }
-
-    init {
-        val rounds = handle.get<Int>("rounds") ?: 0
-        when {
-            templateId != 0L -> viewModelScope.launch {
-                repository.getTemplate(templateId)?.let { stored ->
-                    name = stored.template.name
-                    rows.addAll(
-                        stored.intervals.sortedBy { it.position }.map {
-                            newRow(it.name, IntervalType.valueOf(it.type), it.durationSeconds)
-                        }
-                    )
-                }
-            }
-            rounds > 0 -> {
-                val work = handle.get<Int>("work") ?: 40
-                val rest = handle.get<Int>("rest") ?: 20
-                repeat(rounds) { round ->
-                    rows.add(newRow("Work", IntervalType.WORK, work))
-                    if (round < rounds - 1) rows.add(newRow("Rest", IntervalType.REST, rest))
-                }
-            }
-            else -> rows.add(newRow("Work", IntervalType.WORK, 40))
-        }
-    }
-
-    private fun newRow(name: String, type: IntervalType, seconds: Int) =
-        EditorRow(key = nextKey++, name = name, type = type, durationSeconds = seconds)
-
-    private fun updateRow(key: Long, transform: (EditorRow) -> EditorRow) {
-        val index = rows.indexOfFirst { it.key == key }
-        if (index >= 0) rows[index] = transform(rows[index])
-    }
-
-    fun setRowName(key: Long, newName: String) = updateRow(key) { it.copy(name = newName) }
-
-    fun setRowType(key: Long, newType: IntervalType) = updateRow(key) { row ->
-        // If the name is still the default, swap it to match the new type.
-        val newName = when (row.name) {
-            "Work", "Rest" -> if (newType == IntervalType.WORK) "Work" else "Rest"
-            else -> row.name
-        }
-        row.copy(type = newType, name = newName)
-    }
-
-    fun adjustRowDuration(key: Long, deltaSeconds: Int) = updateRow(key) {
-        it.copy(durationSeconds = stepDuration(it.durationSeconds, deltaSeconds))
-    }
-
-    /** From the wheel picker: any exact value, down to a single second. */
-    fun setRowDuration(key: Long, seconds: Int) = updateRow(key) {
-        it.copy(durationSeconds = seconds.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS))
-    }
-
-    fun addRow(type: IntervalType) {
-        val lastOfType = rows.lastOrNull { it.type == type }
-        val seconds = lastOfType?.durationSeconds ?: if (type == IntervalType.WORK) 40 else 20
-        rows.add(newRow(if (type == IntervalType.WORK) "Work" else "Rest", type, seconds))
-    }
-
-    fun removeRow(key: Long) {
-        if (rows.size > 1) rows.removeAll { it.key == key }
-    }
-
-    /** Inserts a copy of an interval directly below it. */
-    fun duplicateRow(key: Long) {
-        val index = rows.indexOfFirst { it.key == key }
-        if (index < 0) return
-        rows.add(index + 1, rows[index].copy(key = nextKey++))
-    }
-
-    fun moveRow(key: Long, delta: Int) {
-        val from = rows.indexOfFirst { it.key == key }
-        val to = from + delta
-        if (from < 0 || to !in rows.indices) return
-        val row = rows.removeAt(from)
-        rows.add(to, row)
-    }
-
-    private fun currentIntervals(): List<Interval> = rows.map {
-        Interval(
-            name = it.name.ifBlank { if (it.type == IntervalType.WORK) "Work" else "Rest" },
-            type = it.type,
-            durationSeconds = it.durationSeconds,
-        )
-    }
-
-    fun save(onSaved: () -> Unit) {
-        viewModelScope.launch {
-            repository.saveTemplate(
-                id = templateId,
-                name = name.ifBlank { "Workout" },
-                intervals = currentIntervals(),
-            )
-            onSaved()
-        }
-    }
-
-    /** Saves what's on screen as a new template, leaving the original as it was. */
-    fun saveAsCopy(onSaved: () -> Unit) {
-        viewModelScope.launch {
-            repository.saveTemplate(
-                id = 0,
-                name = "${name.ifBlank { "Workout" }} copy",
-                intervals = currentIntervals(),
-            )
-            onSaved()
-        }
-    }
-
-    fun delete(onDeleted: () -> Unit) {
-        if (templateId == 0L) return
-        viewModelScope.launch {
-            repository.deleteTemplate(templateId)
-            onDeleted()
-        }
-    }
+/** What the duration wheels are about to set. */
+private sealed interface PickerTarget {
+    data class Pattern(val type: IntervalType) : PickerTarget
+    data class Row(val key: Long) : PickerTarget
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -225,19 +92,54 @@ class EditorViewModel(app: Application, handle: SavedStateHandle) : AndroidViewM
 fun EditorScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
+    onSaveAndStart: (name: String, intervals: List<Interval>) -> Unit,
     viewModel: EditorViewModel = viewModel(),
 ) {
     // While typing, the bottom bar steps aside so the interval list gets
     // the space the keyboard didn't take.
     val imeVisible = WindowInsets.isImeVisible
-    var durationPickerKey by remember { mutableStateOf<Long?>(null) }
+    val listState = rememberLazyListState()
+    var picker by remember { mutableStateOf<PickerTarget?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    var scrollToEnd by remember { mutableIntStateOf(0) }
 
-    // Drag-to-reorder: the card being dragged follows the finger, and swaps
-    // places with a neighbor once it has moved most of the way past it.
-    var draggingKey by remember { mutableStateOf<Long?>(null) }
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    var cardHeightPx by remember { mutableFloatStateOf(0f) }
-    val gapPx = with(LocalDensity.current) { 10.dp.toPx() }
+    val rows = viewModel.rows
+    val intervals = remember(rows) { rows.map { Interval(it.name, it.type, it.durationSeconds) } }
+    val placeholders = remember(rows) { generatedNames(rows) }
+    val lastWorkKey = rows.lastOrNull { it.type == IntervalType.WORK }?.key
+
+    // The list starts with the starter chips (new templates only) and the
+    // pattern tiles, so rows are numbered from after them.
+    val leadingItems = if (viewModel.isPristine) 2 else 1
+    fun listIndexOf(key: Long): Int = leadingItems + viewModel.rows.indexOfFirst { it.key == key }
+
+    // Dragging reports list items by key. Only interval rows are in the
+    // view model, so the starter chips, tiles and footer are ignored.
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val fromKey = from.key as? Long
+        val toKey = to.key as? Long
+        if (fromKey != null && toKey != null) viewModel.moveRow(fromKey, toKey)
+    }
+
+    // Opening a row's details: make sure all of them can be seen.
+    LaunchedEffect(viewModel.expandedKey) {
+        val key = viewModel.expandedKey ?: return@LaunchedEffect
+        withFrameNanos { } // wait until the opened row has been measured
+        listState.bringIntoView(listIndexOf(key), key)
+    }
+    // Keyboard Next may target a row that isn't on screen yet. Scroll to it;
+    // once it exists, its own effect takes the focus.
+    LaunchedEffect(viewModel.focusRequestKey) {
+        val key = viewModel.focusRequestKey ?: return@LaunchedEffect
+        listState.bringIntoView(listIndexOf(key), key)
+    }
+    // After adding intervals, keep the add buttons in reach.
+    LaunchedEffect(scrollToEnd) {
+        if (scrollToEnd > 0) {
+            withFrameNanos { } // wait until the new rows are in the list
+            listState.animateScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -245,119 +147,82 @@ fun EditorScreen(
             .safeDrawingPadding()
             .imePadding(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 8.dp, end = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            OutlinedTextField(
-                value = viewModel.name,
-                onValueChange = { viewModel.name = it },
-                placeholder = { Text("Template name") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        EditorHeader(
+            viewModel = viewModel,
+            menuOpen = menuOpen,
+            onMenuOpenChange = { menuOpen = it },
+            onBack = onBack,
+            onSaved = onSaved,
+        )
 
-        if (isDial()) {
-            // The shape of the workout, redrawn as intervals change.
-            Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp)) {
+        // The shape of the workout, redrawn as intervals change.
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 2.dp)) {
+            if (isDial()) {
                 SessionStrip(
-                    intervals = viewModel.rows.map {
-                        Interval(it.name, it.type, it.durationSeconds)
-                    },
+                    intervals = intervals,
                     modifier = Modifier.fillMaxWidth(),
                     height = 5.dp,
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "${intervalCountLabel(viewModel.rows.size)} · ${formatDuration(viewModel.totalSeconds)}",
-                    style = DialType.caption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
+            Text(
+                text = summaryText(rows.size, viewModel.totalSeconds),
+                style = captionStyle(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 10.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            items(viewModel.rows, key = { row -> row.key }) { row ->
-                val isDragging = draggingKey == row.key
-                IntervalEditorCard(
-                    row = row,
-                    canDelete = viewModel.rows.size > 1,
-                    highlighted = isDragging,
+            if (viewModel.isPristine) {
+                item(key = "presets") { StarterChips(viewModel) }
+            }
+            item(key = "pattern") {
+                PatternTiles(
+                    intervals = intervals,
                     viewModel = viewModel,
-                    onDurationClick = { durationPickerKey = row.key },
-                    dragHandleModifier = Modifier.pointerInput(row.key) {
-                        detectDragGestures(
-                            onDragStart = {
-                                draggingKey = row.key
-                                dragOffsetY = 0f
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                dragOffsetY += amount.y
-                                val slot = cardHeightPx + gapPx
-                                val index = viewModel.rows.indexOfFirst { it.key == row.key }
-                                if (slot > 0f && index >= 0) {
-                                    if (dragOffsetY > slot * 0.6f && index < viewModel.rows.lastIndex) {
-                                        viewModel.moveRow(row.key, +1)
-                                        dragOffsetY -= slot
-                                    } else if (dragOffsetY < -slot * 0.6f && index > 0) {
-                                        viewModel.moveRow(row.key, -1)
-                                        dragOffsetY += slot
-                                    }
-                                }
-                            },
-                            onDragEnd = {
-                                draggingKey = null
-                                dragOffsetY = 0f
-                            },
-                            onDragCancel = {
-                                draggingKey = null
-                                dragOffsetY = 0f
-                            },
-                        )
-                    },
-                    modifier = Modifier
-                        .zIndex(if (isDragging) 1f else 0f)
-                        .graphicsLayer { translationY = if (isDragging) dragOffsetY else 0f }
-                        .onSizeChanged { cardHeightPx = it.height.toFloat() }
-                        .then(if (isDragging) Modifier else Modifier.animateItem()),
+                    onPickDuration = { type -> picker = PickerTarget.Pattern(type) },
                 )
             }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(
-                        onClick = { viewModel.addRow(IntervalType.WORK) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(
-                            text = "+ Work".labelCase(),
-                            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-                            color = typeColor(IntervalType.WORK),
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = { viewModel.addRow(IntervalType.REST) },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(
-                            text = "+ Rest".labelCase(),
-                            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-                            color = typeColor(IntervalType.REST),
-                        )
-                    }
+            itemsIndexed(rows, key = { _, row -> row.key }) { index, row ->
+                ReorderableItem(reorderState, key = row.key) { isDragging ->
+                    IntervalRow(
+                        row = row,
+                        number = index + 1,
+                        placeholder = placeholders.getOrElse(index) { "" },
+                        imeAction = if (row.type == IntervalType.WORK && row.key != lastWorkKey) {
+                            ImeAction.Next
+                        } else {
+                            ImeAction.Done
+                        },
+                        expanded = viewModel.expandedKey == row.key,
+                        wantsFocus = viewModel.focusRequestKey == row.key,
+                        canDelete = rows.size > 1,
+                        isDragging = isDragging,
+                        handleModifier = Modifier.draggableHandle(
+                            onDragStarted = { viewModel.collapse() },
+                        ),
+                        viewModel = viewModel,
+                        onEditDuration = { picker = PickerTarget.Row(row.key) },
+                    )
                 }
+            }
+            item(key = "footer") {
+                FooterButtons(
+                    canRepeat = workCount(intervals) * 2 <= MAX_ROUNDS,
+                    onAdd = { type ->
+                        viewModel.addRow(type)
+                        scrollToEnd++
+                    },
+                    onRepeatAll = {
+                        viewModel.repeatAll()
+                        scrollToEnd++
+                    },
+                )
             }
         }
 
@@ -365,7 +230,7 @@ fun EditorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 6.dp, bottom = 10.dp),
+                    .padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
@@ -380,153 +245,271 @@ fun EditorScreen(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                if (viewModel.isExisting) {
-                    TextButton(onClick = { viewModel.delete(onDeleted = onSaved) }) {
-                        Text("Delete".labelCase(), color = MaterialTheme.colorScheme.error)
-                    }
-                    TextButton(onClick = { viewModel.saveAsCopy(onSaved = onSaved) }) {
-                        Text("Save copy".labelCase())
-                    }
-                    Spacer(Modifier.width(4.dp))
-                }
                 Button(
-                    onClick = { viewModel.save(onSaved = onSaved) },
+                    onClick = { viewModel.saveAndStart(onSaveAndStart) },
+                    enabled = viewModel.canSave,
                     modifier = Modifier.height(52.dp),
                     shape = RoundedCornerShape(16.dp),
                 ) {
-                    Text(
-                        text = "Save".labelCase(),
-                        style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
-                    )
+                    Text(text = "Save & start".labelCase(), style = buttonStyle())
                 }
             }
         }
     }
 
-    durationPickerKey?.let { key ->
-        val row = viewModel.rows.firstOrNull { it.key == key }
-        if (row != null) {
+    picker?.let { target ->
+        val initialSeconds = when (target) {
+            is PickerTarget.Pattern ->
+                commonDuration(intervals, target.type) ?: lastDurationOf(intervals, target.type)
+            is PickerTarget.Row -> rows.firstOrNull { it.key == target.key }?.durationSeconds
+        }
+        if (initialSeconds != null) {
             DurationPickerDialog(
-                initialSeconds = row.durationSeconds,
-                onDismiss = { durationPickerKey = null },
+                initialSeconds = initialSeconds,
+                onDismiss = { picker = null },
                 onConfirm = { seconds ->
-                    viewModel.setRowDuration(key, seconds)
-                    durationPickerKey = null
+                    when (target) {
+                        is PickerTarget.Pattern -> viewModel.setAllDurations(target.type, seconds)
+                        is PickerTarget.Row -> viewModel.setRowDuration(target.key, seconds)
+                    }
+                    picker = null
                 },
             )
         }
     }
 }
 
+/** "15 INTERVALS · 7:40" in Dial; the same in lower case for Minimal. */
 @Composable
-private fun IntervalEditorCard(
-    row: EditorRow,
-    canDelete: Boolean,
-    highlighted: Boolean,
-    viewModel: EditorViewModel,
-    onDurationClick: () -> Unit,
-    dragHandleModifier: Modifier,
-    modifier: Modifier = Modifier,
-) {
-    val dark = isAppInDarkTheme()
-    val accent = when (row.type) {
-        IntervalType.WORK -> if (dark) CoralLight else Coral
-        IntervalType.REST -> if (dark) TealLight else Teal
+private fun summaryText(count: Int, totalSeconds: Int): String {
+    val countText = if (isDial()) {
+        intervalCountLabel(count)
+    } else {
+        if (count == 1) "1 interval" else "$count intervals"
     }
+    return "$countText · ${formatDuration(totalSeconds)}"
+}
 
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shadowElevation = if (highlighted) 8.dp else 0.dp,
-        modifier = modifier.fillMaxWidth(),
+/**
+ * What each row's name would be if it were blank. Reuses the renaming from
+ * core on a copy of the list with every name emptied.
+ */
+private fun generatedNames(rows: List<EditorRow>): List<String> =
+    withGeneratedNames(rows.map { Interval("", it.type, it.durationSeconds) }).map { it.name }
+
+/**
+ * Scrolls just far enough to show the whole item. An item that isn't on
+ * screen at all is brought to the top.
+ */
+private suspend fun LazyListState.bringIntoView(index: Int, key: Any) {
+    if (index < 0) return
+    val item = layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
+    if (item == null) {
+        animateScrollToItem(index)
+        return
+    }
+    val viewportTop = layoutInfo.viewportStartOffset + layoutInfo.beforeContentPadding
+    val viewportBottom = layoutInfo.viewportEndOffset - layoutInfo.afterContentPadding
+    when {
+        item.offset < viewportTop -> animateScrollBy((item.offset - viewportTop).toFloat())
+        item.offset + item.size > viewportBottom ->
+            animateScrollBy((item.offset + item.size - viewportBottom).toFloat())
+    }
+}
+
+/**
+ * Always on screen, keyboard or not: back, the template's name, and SAVE.
+ * Saving a copy and deleting live in a menu, for templates that already exist.
+ */
+@Composable
+private fun EditorHeader(
+    viewModel: EditorViewModel,
+    menuOpen: Boolean,
+    onMenuOpenChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        val showEdge = isDial()
-        Column(
+        IconButton(onClick = onBack) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
+        Box(
+            contentAlignment = Alignment.CenterStart,
             modifier = Modifier
-                // A coloured edge marks the interval as work or rest.
-                .drawBehind {
-                    if (showEdge) {
-                        drawRect(
-                            color = accent,
-                            topLeft = Offset(0f, 12.dp.toPx()),
-                            size = Size(3.dp.toPx(), size.height - 24.dp.toPx()),
-                        )
-                    }
-                }
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .weight(1f)
+                .height(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 12.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = row.name,
-                    onValueChange = { viewModel.setRowName(row.key, it) },
-                    placeholder = { Text(if (row.type == IntervalType.WORK) "Work" else "Rest") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(4.dp))
-                IconButton(
-                    onClick = { viewModel.duplicateRow(row.key) },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = "Duplicate interval")
+            InlineTextField(
+                value = viewModel.name,
+                onValueChange = { viewModel.name = it },
+                placeholder = viewModel.suggestedName,
+                textStyle = nameStyle(),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (viewModel.isExisting) {
+            Box {
+                IconButton(onClick = { onMenuOpenChange(true) }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = "More")
                 }
-                IconButton(
-                    onClick = { viewModel.removeRow(row.key) },
-                    enabled = canDelete,
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Delete interval")
-                }
-                // Press and drag this handle to move the interval.
-                Icon(
-                    Icons.Filled.DragHandle,
-                    contentDescription = "Drag to reorder",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = dragHandleModifier
-                        .size(36.dp)
-                        .padding(6.dp),
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = row.type == IntervalType.WORK,
-                    onClick = { viewModel.setRowType(row.key, IntervalType.WORK) },
-                    label = { Text("Work") },
-                )
-                Spacer(Modifier.width(8.dp))
-                FilterChip(
-                    selected = row.type == IntervalType.REST,
-                    onClick = { viewModel.setRowType(row.key, IntervalType.REST) },
-                    label = { Text("Rest") },
-                )
-                Spacer(Modifier.weight(1f))
-                FilledTonalButton(
-                    onClick = { viewModel.adjustRowDuration(row.key, -5) },
-                    shape = CircleShape,
-                    modifier = Modifier.size(40.dp),
-                    contentPadding = PaddingValues(0.dp),
-                ) {
-                    Text("−")
-                }
-                Text(
-                    text = formatDuration(row.durationSeconds),
-                    style = figureStyle(),
-                    color = accent,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(onClick = onDurationClick)
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                )
-                FilledTonalButton(
-                    onClick = { viewModel.adjustRowDuration(row.key, +5) },
-                    shape = CircleShape,
-                    modifier = Modifier.size(40.dp),
-                    contentPadding = PaddingValues(0.dp),
-                ) {
-                    Text("+")
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenuOpenChange(false) }) {
+                    DropdownMenuItem(
+                        text = { Text("Save copy".labelCase(), style = labelStyle()) },
+                        enabled = viewModel.canSave,
+                        onClick = {
+                            onMenuOpenChange(false)
+                            viewModel.saveAsCopy(onSaved = onSaved)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "Delete".labelCase(),
+                                style = labelStyle(),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            onMenuOpenChange(false)
+                            viewModel.delete(onDeleted = onSaved)
+                        },
+                    )
                 }
             }
         }
+        TextButton(
+            onClick = { viewModel.save(onSaved = onSaved) },
+            enabled = viewModel.canSave,
+        ) {
+            Text(text = "Save".labelCase(), style = buttonStyle())
+        }
+    }
+}
+
+/** TABATA / HIIT / STRENGTH: replace the list with a ready-made workout. */
+@Composable
+private fun StarterChips(viewModel: EditorViewModel) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        starterTemplates.forEach { starter ->
+            FilterChip(
+                selected = viewModel.name == starter.name,
+                onClick = { viewModel.applyStarter(starter) },
+                label = { Text(starter.shortName.labelCase(), style = labelStyle()) },
+            )
+        }
+    }
+}
+
+/** ROUNDS, WORK and REST: change the whole list at once. */
+@Composable
+private fun PatternTiles(
+    intervals: List<Interval>,
+    viewModel: EditorViewModel,
+    onPickDuration: (IntervalType) -> Unit,
+) {
+    val rounds = workCount(intervals)
+    val roundsEditable = rounds <= MAX_ROUNDS // a longer list would be cut short
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PatternTile(
+            label = "Rounds",
+            value = "$rounds",
+            valueColor = MaterialTheme.colorScheme.onSurface,
+            decreaseDescription = "Fewer rounds",
+            increaseDescription = "More rounds",
+            canDecrease = roundsEditable && rounds > 1,
+            canIncrease = rounds < MAX_ROUNDS,
+            onDecrease = { viewModel.stepRounds(-1) },
+            onIncrease = { viewModel.stepRounds(+1) },
+            modifier = Modifier.weight(1f),
+        )
+        DurationTile(IntervalType.WORK, "Work", intervals, viewModel, onPickDuration, Modifier.weight(1f))
+        DurationTile(IntervalType.REST, "Rest", intervals, viewModel, onPickDuration, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun DurationTile(
+    type: IntervalType,
+    label: String,
+    intervals: List<Interval>,
+    viewModel: EditorViewModel,
+    onPickDuration: (IntervalType) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val any = intervals.any { it.type == type }
+    val common = commonDuration(intervals, type)
+    PatternTile(
+        label = label,
+        value = when {
+            common != null -> formatDuration(common)
+            !any -> "--"
+            else -> "Mixed".labelCase()
+        },
+        valueColor = typeColor(type),
+        decreaseDescription = "Shorter ${label.lowercase()}",
+        increaseDescription = "Longer ${label.lowercase()}",
+        canDecrease = any,
+        canIncrease = any,
+        onDecrease = { viewModel.stepAllDurations(type, -5) },
+        onIncrease = { viewModel.stepAllDurations(type, +5) },
+        onValueClick = if (any) ({ onPickDuration(type) }) else null,
+        modifier = modifier,
+    )
+}
+
+/** + WORK, + REST, REPEAT ALL. */
+@Composable
+private fun FooterButtons(
+    canRepeat: Boolean,
+    onAdd: (IntervalType) -> Unit,
+    onRepeatAll: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FooterButton("+ Work", typeColor(IntervalType.WORK), true, { onAdd(IntervalType.WORK) }, Modifier.weight(1f))
+        FooterButton("+ Rest", typeColor(IntervalType.REST), true, { onAdd(IntervalType.REST) }, Modifier.weight(1f))
+        FooterButton(
+            text = "Repeat all",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            enabled = canRepeat,
+            onClick = onRepeatAll,
+            modifier = Modifier.weight(1.4f),
+        )
+    }
+}
+
+@Composable
+private fun FooterButton(
+    text: String,
+    color: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp),
+    ) {
+        Text(text = text.labelCase(), style = labelStyle(), color = color, maxLines = 1)
     }
 }

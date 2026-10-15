@@ -78,7 +78,7 @@ fun QuickBuildScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(12.dp))
         PageTitle("Quick session")
         Spacer(Modifier.height(6.dp))
         Text(

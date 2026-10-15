@@ -231,7 +231,7 @@ fun PhoneSettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(12.dp))
         PageTitle("Settings")
         Spacer(Modifier.height(24.dp))
 

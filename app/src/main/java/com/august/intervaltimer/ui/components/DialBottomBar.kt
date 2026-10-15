@@ -25,9 +25,9 @@ import com.august.intervaltimer.ui.theme.DialType
  */
 @Composable
 fun DialBottomBar(
-    pages: List<Pair<String, String>>,
-    currentRoute: String?,
-    onSelect: (String) -> Unit,
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -41,13 +41,13 @@ fun DialBottomBar(
                 .fillMaxWidth()
                 .height(56.dp),
         ) {
-            pages.forEach { (route, label) ->
-                val selected = route == currentRoute
+            labels.forEachIndexed { index, label ->
+                val selected = index == selectedIndex
                 Box(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .clickable { onSelect(route) },
+                        .clickable { onSelect(index) },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (selected) {

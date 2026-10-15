@@ -127,7 +127,7 @@ fun LibraryScreen(
         ) {
             item {
                 Column {
-                    Spacer(Modifier.height(40.dp))
+                    Spacer(Modifier.height(12.dp))
                     if (isDial()) {
                         // The wordmark.
                         Text(text = "INTERVAL", style = DialType.title)
