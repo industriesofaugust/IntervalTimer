@@ -148,13 +148,9 @@ fun HrChart(
         )
         val tagWidth = peakLabel.size.width + 10.dp.toPx()
         val tagHeight = peakLabel.size.height + 2.dp.toPx()
-        // The tag sits to the left of the point, or to the right near the left edge.
-        val tagLeft = if (peakPoint.x - tagWidth - 10.dp.toPx() >= 0f) {
-            peakPoint.x - tagWidth - 10.dp.toPx()
-        } else {
-            peakPoint.x + 10.dp.toPx()
-        }
-        val tagTop = (peakPoint.y - tagHeight / 2f).coerceIn(4.dp.toPx(), chartHeight - tagHeight)
+        // The tag sits right above the point, kept inside the chart.
+        val tagLeft = (peakPoint.x - tagWidth / 2f).coerceIn(0f, size.width - tagWidth)
+        val tagTop = (peakPoint.y - tagHeight - 9.dp.toPx()).coerceAtLeast(4.dp.toPx())
         drawRoundRect(
             color = lineColor,
             topLeft = Offset(tagLeft, tagTop),

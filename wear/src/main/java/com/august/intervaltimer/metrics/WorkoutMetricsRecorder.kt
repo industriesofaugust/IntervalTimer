@@ -5,16 +5,19 @@ import android.os.SystemClock
 import androidx.health.services.client.ExerciseUpdateCallback
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.data.Availability
+import androidx.health.services.client.data.BatchingMode
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.ExerciseConfig
 import androidx.health.services.client.data.ExerciseLapSummary
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import com.august.intervaltimer.sync.HrSample
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class LiveMetrics(
     val currentHeartRate: Double? = null,
@@ -40,6 +43,7 @@ class WorkoutMetricsRecorder(context: Context) {
     private var totalCalories = 0.0
     private var recording = false
     private var isPaused = false
+    private var ended: CompletableDeferred<Unit>? = null
 
     private val _live = MutableStateFlow(LiveMetrics())
     val live: StateFlow<LiveMetrics> = _live.asStateFlow()
@@ -67,6 +71,7 @@ class WorkoutMetricsRecorder(context: Context) {
                 steps = totalSteps,
                 calories = totalCalories,
             )
+            if (update.exerciseStateInfo.state.isEnded) ended?.complete(Unit)
         }
 
         override fun onLapSummaryReceived(lapSummary: ExerciseLapSummary) {}
@@ -99,10 +104,17 @@ class WorkoutMetricsRecorder(context: Context) {
         _live.value = LiveMetrics()
         runCatching {
             exerciseClient.setUpdateCallback(callback)
+            // With the screen off the watch otherwise holds readings back for
+            // minutes; ask for heart rate every few seconds where supported.
+            val capabilities = exerciseClient.getCapabilitiesAsync().await()
+            val batching = setOf(BatchingMode.HEART_RATE_5_SECONDS)
+                .filter { it in capabilities.supportedBatchingModeOverrides }
+                .toSet()
             val config = ExerciseConfig.builder(ExerciseType.HIGH_INTENSITY_INTERVAL_TRAINING)
                 .setDataTypes(setOf(DataType.HEART_RATE_BPM, DataType.STEPS, DataType.CALORIES))
                 .setIsGpsEnabled(false)
                 .setIsAutoPauseAndResumeEnabled(false)
+                .setBatchingModeOverrides(batching)
                 .build()
             exerciseClient.startExerciseAsync(config).await()
             recording = true
@@ -114,7 +126,13 @@ class WorkoutMetricsRecorder(context: Context) {
     suspend fun stop(): LiveMetrics {
         if (recording) {
             recording = false
+            // Readings still held back by the watch arrive in one last update
+            // after ending; wait for it so the end of the workout isn't lost.
+            val endedSignal = CompletableDeferred<Unit>()
+            ended = endedSignal
             runCatching { exerciseClient.endExerciseAsync().await() }
+            withTimeoutOrNull(3_000) { endedSignal.await() }
+            ended = null
             runCatching { exerciseClient.clearUpdateCallbackAsync(callback).await() }
         }
         return _live.value

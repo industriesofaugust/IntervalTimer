@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.recordPhoneWorkout
+import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.timer.SoundPlayer
@@ -65,7 +66,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
     val state by viewModel.uiState.collectAsState()
 
     // The engine announces cue moments; on the phone we answer with beeps,
-    // if sounds are enabled in Settings.
+    // if sounds and vibration are enabled in Settings.
     val app = LocalContext.current.applicationContext as TimerApp
     val settings by app.settingsRepository.settings.collectAsState(initial = AppSettings())
     val soundPlayer = remember(settings.soundEnabled, settings.soundVolume) {
@@ -74,8 +75,10 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
     DisposableEffect(soundPlayer) {
         onDispose { soundPlayer?.release() }
     }
-    LaunchedEffect(viewModel, soundPlayer) {
+    val haptics = remember { HapticsPlayer(app) }
+    LaunchedEffect(viewModel, soundPlayer, settings.vibrate, settings.vibrationLevel) {
         viewModel.cues.collect { cue ->
+            if (settings.vibrate) haptics.play(cue, settings.vibrationLevel)
             when (cue) {
                 TimerCue.COUNTDOWN_TICK -> soundPlayer?.countdownTick()
                 TimerCue.WORK_START -> soundPlayer?.workStart()

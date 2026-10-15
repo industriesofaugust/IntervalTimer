@@ -16,6 +16,9 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 data class AppSettings(
     val soundEnabled: Boolean = true,
     val soundVolume: Int = 85,
+    val vibrate: Boolean = true,
+    /** 1 (gentle) to 5 (strongest). */
+    val vibrationLevel: Int = 3,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val style: AppStyle = AppStyle.DIAL,
     val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
@@ -28,6 +31,8 @@ class AppSettingsRepository(private val context: Context) {
     private object Keys {
         val soundEnabled = booleanPreferencesKey("sound_enabled")
         val soundVolume = intPreferencesKey("sound_volume")
+        val vibrate = booleanPreferencesKey("vibrate")
+        val vibrationLevel = intPreferencesKey("vibration_level")
         val themeMode = stringPreferencesKey("theme_mode")
         val style = stringPreferencesKey("style")
         val countdownFormat = stringPreferencesKey("countdown_format")
@@ -37,6 +42,8 @@ class AppSettingsRepository(private val context: Context) {
         AppSettings(
             soundEnabled = prefs[Keys.soundEnabled] ?: true,
             soundVolume = prefs[Keys.soundVolume] ?: 85,
+            vibrate = prefs[Keys.vibrate] ?: true,
+            vibrationLevel = (prefs[Keys.vibrationLevel] ?: 3).coerceIn(1, 5),
             themeMode = prefs[Keys.themeMode]
                 ?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
@@ -55,6 +62,14 @@ class AppSettingsRepository(private val context: Context) {
 
     suspend fun setSoundVolume(volume: Int) {
         context.dataStore.edit { it[Keys.soundVolume] = volume.coerceIn(0, 100) }
+    }
+
+    suspend fun setVibrate(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.vibrate] = enabled }
+    }
+
+    suspend fun setVibrationLevel(level: Int) {
+        context.dataStore.edit { it[Keys.vibrationLevel] = level.coerceIn(1, 5) }
     }
 
     suspend fun setStyle(style: AppStyle) {

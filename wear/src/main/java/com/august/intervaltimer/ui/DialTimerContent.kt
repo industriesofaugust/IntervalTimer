@@ -1,5 +1,7 @@
 package com.august.intervaltimer.ui
 
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.animation.AnimatedVisibility
@@ -343,14 +345,14 @@ internal fun DialFinishedContent(view: TimerView, live: State<LiveMetrics>, onDo
             )
             FinishedStats(live)
             Spacer(Modifier.height(6.dp))
-            Button(onClick = onDone, modifier = Modifier.width(DONE_BUTTON_WIDTH)) {
+            CompactButton(onClick = onDone, modifier = Modifier.width(DONE_BUTTON_WIDTH), colors = ButtonDefaults.buttonColors()) {
                 Text("DONE", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
             }
         }
     }
 }
 
-private val DONE_BUTTON_WIDTH = 108.dp
+private val DONE_BUTTON_WIDTH = 88.dp
 
 /** Heart rate, steps and calories, for the lines under the summary. */
 @Composable

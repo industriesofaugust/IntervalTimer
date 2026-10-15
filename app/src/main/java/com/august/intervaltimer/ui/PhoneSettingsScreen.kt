@@ -28,12 +28,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -50,10 +52,13 @@ import com.august.intervaltimer.data.HealthConnectWriter
 import com.august.intervaltimer.data.ThemeMode
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
+import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WatchCueSettings
 import com.august.intervaltimer.sync.WatchCueSettingsCodec
+import com.august.intervaltimer.timer.SoundPlayer
+import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.PageTitle
 import com.august.intervaltimer.ui.theme.SectionHeader
@@ -68,6 +73,8 @@ import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
@@ -77,6 +84,8 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).settingsRepository
     private val resultsRepository = (app as TimerApp).resultsRepository
     private val healthConnect = HealthConnectWriter(app)
+    private val haptics = HapticsPlayer(app)
+    private var testJob: Job? = null
 
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
@@ -105,6 +114,50 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setSoundVolume(volume: Int) {
         viewModelScope.launch { repository.setSoundVolume(volume) }
+    }
+
+    fun setVibrate(enabled: Boolean) {
+        viewModelScope.launch { repository.setVibrate(enabled) }
+        // Let the user feel what they just switched on.
+        if (enabled) haptics.play(TimerCue.WORK_START, settings.value.vibrationLevel)
+    }
+
+    fun setVibrationLevel(level: Int) {
+        viewModelScope.launch { repository.setVibrationLevel(level) }
+        haptics.play(TimerCue.WORK_START, level)
+    }
+
+    /** Plays 3-2-1, work, rest, finish with the current phone settings. */
+    fun testCues() {
+        testJob?.cancel()
+        testJob = viewModelScope.launch {
+            val current = settings.value
+            val sound = if (current.soundEnabled) SoundPlayer(current.soundVolume) else null
+            try {
+                fun cue(cue: TimerCue) {
+                    if (current.vibrate) haptics.play(cue, current.vibrationLevel)
+                    when (cue) {
+                        TimerCue.COUNTDOWN_TICK -> sound?.countdownTick()
+                        TimerCue.WORK_START -> sound?.workStart()
+                        TimerCue.REST_START -> sound?.restStart()
+                        TimerCue.FINISH -> sound?.finish()
+                    }
+                }
+
+                repeat(3) {
+                    cue(TimerCue.COUNTDOWN_TICK)
+                    delay(700)
+                }
+                cue(TimerCue.WORK_START)
+                delay(1300)
+                cue(TimerCue.REST_START)
+                delay(1300)
+                cue(TimerCue.FINISH)
+                delay(900)
+            } finally {
+                sound?.release()
+            }
+        }
     }
 
     fun setThemeMode(mode: ThemeMode) {
@@ -305,20 +358,11 @@ fun PhoneSettingsScreen(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            OutlinedButton(
-                onClick = watchCues::testOnWatch,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text(
-                    text = "Test on watch".labelCase(),
-                    style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-                )
-            }
+            TestButton("Test on watch", onClick = watchCues::testOnWatch)
         }
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader("Phone sound")
+        SectionHeader("Phone cues")
         Spacer(Modifier.height(8.dp))
         SettingsCard {
             ToggleRow(
@@ -338,6 +382,21 @@ fun PhoneSettingsScreen(
                     onSelect = { index -> viewModel.setSoundVolume(listOf(50, 85, 100)[index]) },
                 )
             }
+            Spacer(Modifier.height(16.dp))
+            ToggleRow(
+                title = "Vibration",
+                checked = settings.vibrate,
+                onCheckedChange = viewModel::setVibrate,
+            )
+            if (settings.vibrate) {
+                LevelBar(
+                    level = settings.vibrationLevel,
+                    color = typeColor(IntervalType.WORK),
+                    onLevelChange = viewModel::setVibrationLevel,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            TestButton("Test cues", onClick = viewModel::testCues)
         }
 
         if (viewModel.healthConnectAvailable) {
@@ -383,9 +442,11 @@ fun PhoneSettingsScreen(
 
         Spacer(Modifier.height(24.dp))
         SectionHeader("About")
+        val context = LocalContext.current
+        val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Interval Timer 0.12. Your templates and workouts live on your devices: " +
+            text = "Interval Timer $version. Your templates and workouts live on your devices: " +
                 "no account, no server. Health Connect sharing is optional.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -420,6 +481,20 @@ private fun ToggleRow(
             modifier = Modifier.weight(1f),
         )
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun TestButton(label: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text(
+            text = label.labelCase(),
+            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+        )
     }
 }
 

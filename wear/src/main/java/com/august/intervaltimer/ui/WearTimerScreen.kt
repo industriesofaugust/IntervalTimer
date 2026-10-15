@@ -1,5 +1,7 @@
 package com.august.intervaltimer.ui
 
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.animation.animateColorAsState
@@ -334,7 +336,7 @@ private fun FinishedContent(
             )
         }
         Spacer(Modifier.height(10.dp))
-        Button(onClick = onDone, modifier = Modifier.width(116.dp)) {
+        CompactButton(onClick = onDone, modifier = Modifier.width(88.dp), colors = ButtonDefaults.buttonColors()) {
             Text("DONE", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         }
     }
