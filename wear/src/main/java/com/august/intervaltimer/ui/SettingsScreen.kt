@@ -1,80 +1,60 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Scaffold
-import androidx.wear.compose.material.Switch
-import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TimeText
-import androidx.wear.compose.material.ToggleChip
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.FilledTonalButton
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Slider
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.SwitchButton
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.TransformationSpec
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
-import com.august.intervaltimer.ui.components.SectionLabel
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchSettings
-import com.august.intervaltimer.settings.WatchSettingsRepository
+import com.august.intervaltimer.settings.WatchStores
+import com.august.intervaltimer.settings.rememberWatchSettings
 import com.august.intervaltimer.sync.WatchCueSettings
 import com.august.intervaltimer.sync.publishWatchCues
 import com.august.intervaltimer.sync.soundVolumePercent
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
+import com.august.intervaltimer.ui.components.ScreenTitle
+import com.august.intervaltimer.ui.components.transformedItem
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
-    private val repository = WatchSettingsRepository(app)
+    private val repository = WatchStores.repository
     private val haptics = HapticsPlayer(app)
 
-    val settings = repository.settings
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WatchSettings())
+    // The settings are loaded before any screen is shown.
+    private val current: WatchSettings get() = WatchStores.settings.value ?: WatchSettings()
 
     fun setVibrationEnabled(enabled: Boolean) =
         updateCues(previewVibration = enabled) { it.copy(vibrationEnabled = enabled) }
 
-    fun adjustVibration(delta: Int) = updateCues(previewVibration = true) {
-        it.copy(vibrationLevel = (it.vibrationLevel + delta).coerceIn(1, 5))
+    fun setVibrationLevel(level: Int) = updateCues(previewVibration = true) {
+        it.copy(vibrationLevel = level.coerceIn(1, 5))
     }
 
     fun setSoundEnabled(enabled: Boolean) =
         updateCues(previewSound = enabled) { it.copy(soundEnabled = enabled) }
 
-    fun adjustSound(delta: Int) = updateCues(previewSound = true) {
-        it.copy(soundLevel = (it.soundLevel + delta).coerceIn(1, 5))
+    fun setSoundLevel(level: Int) = updateCues(previewSound = true) {
+        it.copy(soundLevel = level.coerceIn(1, 5))
     }
 
     fun setKeepScreenOn(keepOn: Boolean) {
@@ -82,7 +62,7 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleCountdownFormat() {
-        val next = if (settings.value.countdownFormat == CountdownFormat.SECONDS) {
+        val next = if (current.countdownFormat == CountdownFormat.SECONDS) {
             CountdownFormat.MINUTES_SECONDS
         } else {
             CountdownFormat.SECONDS
@@ -91,7 +71,7 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleStyle() {
-        val next = if (settings.value.style == AppStyle.DIAL) AppStyle.MINIMAL else AppStyle.DIAL
+        val next = if (current.style == AppStyle.DIAL) AppStyle.MINIMAL else AppStyle.DIAL
         viewModelScope.launch { repository.setStyle(next) }
     }
 
@@ -101,7 +81,7 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
         transform: (WatchCueSettings) -> WatchCueSettings,
     ) {
         viewModelScope.launch {
-            val updated = transform(settings.value.cues)
+            val updated = transform(current.cues)
             repository.setCues(updated)
             publishWatchCues(getApplication(), updated)
             // Let the user feel/hear what they just picked.
@@ -120,74 +100,55 @@ class WatchSettingsViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 fun WatchSettingsScreen(viewModel: WatchSettingsViewModel = viewModel()) {
-    val settings by viewModel.settings.collectAsState()
+    val columnState = rememberTransformingLazyColumnState()
+    val spec = rememberTransformationSpec()
+    val settingsState: State<WatchSettings> = rememberWatchSettings()
+    val settings = settingsState.value
     val cues = settings.cues
 
-    Scaffold(timeText = { TimeText() }) {
-        ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-            item { SectionLabel("Settings") }
-            item {
-                Chip(
-                    onClick = viewModel::toggleCountdownFormat,
-                    label = { Text("Countdown") },
-                    secondaryLabel = {
-                        Text(
-                            if (settings.countdownFormat == CountdownFormat.SECONDS) "Seconds (90)"
-                            else "Minutes (1:30)"
-                        )
-                    },
-                    colors = ChipDefaults.secondaryChipColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                Chip(
-                    onClick = viewModel::toggleStyle,
-                    label = { Text("Style") },
-                    secondaryLabel = {
-                        Text(if (settings.style == AppStyle.DIAL) "Dial" else "Minimal")
-                    },
-                    colors = ChipDefaults.secondaryChipColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                SettingToggle(
-                    label = "Vibrate",
-                    checked = cues.vibrationEnabled,
-                    onCheckedChange = viewModel::setVibrationEnabled,
-                )
+    ScreenScaffold(scrollState = columnState) { contentPadding ->
+        TransformingLazyColumn(state = columnState, contentPadding = contentPadding) {
+            item(key = "title") { ScreenTitle("SETTINGS", spec) }
+
+            item(key = "vibrate") {
+                SettingSwitch("VIBRATE", cues.vibrationEnabled, spec, viewModel::setVibrationEnabled)
             }
             if (cues.vibrationEnabled) {
-                item {
-                    LevelBar(
-                        level = cues.vibrationLevel,
-                        accent = WorkAccent,
-                        onAdjust = viewModel::adjustVibration,
-                    )
+                item(key = "vibrate-level") {
+                    LevelSlider(cues.vibrationLevel, spec, viewModel::setVibrationLevel)
                 }
             }
-            item {
-                SettingToggle(
-                    label = "Sound",
-                    checked = cues.soundEnabled,
-                    onCheckedChange = viewModel::setSoundEnabled,
-                )
+
+            item(key = "sound") {
+                SettingSwitch("SOUND", cues.soundEnabled, spec, viewModel::setSoundEnabled)
             }
             if (cues.soundEnabled) {
-                item {
-                    LevelBar(
-                        level = cues.soundLevel,
-                        accent = RestAccent,
-                        onAdjust = viewModel::adjustSound,
-                    )
+                item(key = "sound-level") {
+                    LevelSlider(cues.soundLevel, spec, viewModel::setSoundLevel)
                 }
             }
-            item {
-                SettingToggle(
-                    label = "Screen on",
-                    checked = settings.keepScreenOn,
-                    onCheckedChange = viewModel::setKeepScreenOn,
+
+            item(key = "screen-on") {
+                SettingSwitch("KEEP SCREEN ON", settings.keepScreenOn, spec, viewModel::setKeepScreenOn)
+            }
+            item(key = "countdown") {
+                SettingChoice(
+                    label = "COUNTDOWN",
+                    choice = if (settings.countdownFormat == CountdownFormat.SECONDS) {
+                        "Seconds (90)"
+                    } else {
+                        "Minutes (1:30)"
+                    },
+                    spec = spec,
+                    onClick = viewModel::toggleCountdownFormat,
+                )
+            }
+            item(key = "face") {
+                SettingChoice(
+                    label = "TIMER FACE",
+                    choice = if (settings.style == AppStyle.DIAL) "Dial" else "Minimal",
+                    spec = spec,
+                    onClick = viewModel::toggleStyle,
                 )
             }
         }
@@ -195,69 +156,52 @@ fun WatchSettingsScreen(viewModel: WatchSettingsViewModel = viewModel()) {
 }
 
 @Composable
-private fun SettingToggle(
+private fun TransformingLazyColumnItemScope.SettingSwitch(
     label: String,
     checked: Boolean,
+    spec: TransformationSpec,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    ToggleChip(
+    SwitchButton(
         checked = checked,
         onCheckedChange = onCheckedChange,
-        label = { Text(label) },
-        toggleControl = {
-            Switch(checked = checked, enabled = true, onCheckedChange = null)
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
+        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+        transformation = SurfaceTransformation(spec),
+    ) {
+        Text(label)
+    }
 }
 
-/**
- * Five-step level control: minus and plus buttons around a thin bar that
- * fills as the level rises.
- */
+/** A button that steps through a short list of choices each time it is tapped. */
 @Composable
-private fun LevelBar(
-    level: Int,
-    accent: Color,
-    onAdjust: (Int) -> Unit,
+private fun TransformingLazyColumnItemScope.SettingChoice(
+    label: String,
+    choice: String,
+    spec: TransformationSpec,
+    onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().transformedHeight(this, spec),
+        secondaryLabel = { Text(choice) },
+        transformation = SurfaceTransformation(spec),
     ) {
-        Button(
-            onClick = { onAdjust(-1) },
-            enabled = level > 1,
-            colors = ButtonDefaults.secondaryButtonColors(),
-            modifier = Modifier.size(32.dp),
-        ) {
-            Icon(Icons.Filled.Remove, contentDescription = "Lower", modifier = Modifier.size(16.dp))
-        }
-        Spacer(Modifier.width(8.dp))
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colors.onSurfaceVariant.copy(alpha = 0.25f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(level.coerceIn(1, 5) / 5f)
-                    .background(accent),
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Button(
-            onClick = { onAdjust(+1) },
-            enabled = level < 5,
-            colors = ButtonDefaults.secondaryButtonColors(),
-            modifier = Modifier.size(32.dp),
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Raise", modifier = Modifier.size(16.dp))
-        }
+        Text(label, maxLines = 1)
     }
+}
+
+/** Five steps, from subtle (1) to maximum (5). */
+@Composable
+private fun TransformingLazyColumnItemScope.LevelSlider(
+    level: Int,
+    spec: TransformationSpec,
+    onLevelChange: (Int) -> Unit,
+) {
+    Slider(
+        value = level,
+        onValueChange = onLevelChange,
+        valueProgression = 1..5,
+        segmented = true,
+        modifier = Modifier.fillMaxWidth().transformedItem(this, spec),
+    )
 }

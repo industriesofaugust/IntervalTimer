@@ -1,7 +1,7 @@
 package com.august.intervaltimer.sync
 
 import com.august.intervaltimer.haptics.HapticsPlayer
-import com.august.intervaltimer.settings.WatchSettingsRepository
+import com.august.intervaltimer.settings.WatchStores
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
 import com.google.android.gms.wearable.DataEvent
@@ -41,12 +41,12 @@ class PhoneListenerService : WearableListenerService() {
         val json = DataMapItem.fromDataItem(item)
             .dataMap.getString(SyncPaths.WATCH_SETTINGS_KEY) ?: return
         val cues = WatchCueSettingsCodec.decode(json)
-        runBlocking { WatchSettingsRepository(applicationContext).setCues(cues) }
+        runBlocking { WatchStores.repository.setCues(cues) }
     }
 
     /** Plays 3-2-1, work, rest, finish with the current settings. */
     private fun playTestSequence() = runBlocking {
-        val settings = WatchSettingsRepository(applicationContext).settings.first()
+        val settings = WatchStores.repository.settings.first()
         val haptics = HapticsPlayer(applicationContext)
         val sound =
             if (settings.cues.soundEnabled) SoundPlayer(settings.cues.soundVolumePercent) else null

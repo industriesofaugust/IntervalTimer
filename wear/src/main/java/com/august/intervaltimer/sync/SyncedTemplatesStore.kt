@@ -1,14 +1,14 @@
 package com.august.intervaltimer.sync
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
+import android.content.Context
+import android.net.Uri
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,30 +17,43 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * Watch-side receiver: reads the templates the phone published to the Data
- * Layer, and keeps listening so edits on the phone appear here live.
+ * Layer once, then keeps listening so edits on the phone appear live. There
+ * is one of these for the whole app (see WatchStores), so opening a screen
+ * never has to ask the Data Layer again.
  */
-class SyncedTemplatesViewModel(app: Application) :
-    AndroidViewModel(app), DataClient.OnDataChangedListener {
+class SyncedTemplatesStore(context: Context, scope: CoroutineScope) :
+    DataClient.OnDataChangedListener {
 
-    private val dataClient = Wearable.getDataClient(app)
+    // No host in the address means "from any device", so this matches only
+    // the templates item, whoever published it.
+    private val templatesUri = Uri.Builder()
+        .scheme("wear")
+        .path(SyncPaths.TEMPLATES_PATH)
+        .build()
 
     private val _templates = MutableStateFlow<List<SyncedTemplate>>(emptyList())
     val templates: StateFlow<List<SyncedTemplate>> = _templates.asStateFlow()
 
     init {
-        dataClient.addListener(this)
-        viewModelScope.launch { loadCurrentTemplates() }
+        // In the background, so starting the app never waits for Google Play services.
+        scope.launch {
+            val dataClient = Wearable.getDataClient(context)
+            // Listen first, so a change that lands during the load isn't missed.
+            runCatching {
+                dataClient.addListener(this@SyncedTemplatesStore, templatesUri, DataClient.FILTER_LITERAL)
+                    .await()
+            }
+            runCatching { loadCurrentTemplates(dataClient) }
+        }
     }
 
     /** Reads whatever the phone last published, even if it arrived days ago. */
-    private suspend fun loadCurrentTemplates() {
-        runCatching {
-            val buffer = dataClient.dataItems.await()
-            try {
-                buffer.forEach { item -> readItem(item) }
-            } finally {
-                buffer.release()
-            }
+    private suspend fun loadCurrentTemplates(dataClient: DataClient) {
+        val buffer = dataClient.getDataItems(templatesUri, DataClient.FILTER_LITERAL).await()
+        try {
+            buffer.forEach { item -> readItem(item) }
+        } finally {
+            buffer.release()
         }
     }
 
@@ -59,9 +72,5 @@ class SyncedTemplatesViewModel(app: Application) :
                 _templates.value = TemplateSyncCodec.decode(json).templates
             }
         }
-    }
-
-    override fun onCleared() {
-        dataClient.removeListener(this)
     }
 }

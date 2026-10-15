@@ -2,6 +2,7 @@ package com.august.intervaltimer.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,94 +11,109 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.ListHeader
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Scaffold
-import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TimeText
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.TransformationSpec
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import com.august.intervaltimer.design.ringSegments
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
-import androidx.compose.ui.unit.sp
 import com.august.intervaltimer.ui.components.DialType
-import com.august.intervaltimer.ui.components.LocalDial
+import com.august.intervaltimer.ui.components.SessionRing
+import com.august.intervaltimer.ui.components.transformedItem
 
 /**
- * Shows what a workout contains — every interval, in order — before the
- * user commits to starting it.
+ * Shows what a workout contains before the user commits to starting it: the
+ * session ring as a map, then every interval in order. Start sits inside the
+ * ring, so it can be tapped straight away, and again at the end of the list.
  */
 @Composable
-fun PreviewScreen(
-    name: String,
-    intervals: List<Interval>,
-    onStart: () -> Unit,
-) {
-    val totalSeconds = intervals.sumOf { it.durationSeconds }
-    val workCount = intervals.count { it.type == IntervalType.WORK }
+fun PreviewScreen(workout: WorkoutItem, onStart: () -> Unit) {
+    val columnState = rememberTransformingLazyColumnState()
+    val spec = rememberTransformationSpec()
 
-    if (LocalDial.current) {
-        // Dial: the session ring as a map of the workout, with the list below.
-        Scaffold {
-            ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-                item { DialPreviewHeader(name = name, intervals = intervals, onStart = onStart) }
-                intervals.forEach { interval ->
-                    item { IntervalPreviewRow(interval) }
-                }
+    ScreenScaffold(
+        scrollState = columnState,
+        edgeButton = {
+            EdgeButton(onClick = onStart, buttonSize = EdgeButtonSize.Medium) {
+                Text("START")
             }
-        }
-        return
-    }
-
-    Scaffold(timeText = { TimeText() }) {
-        ScalingLazyColumn(modifier = Modifier.fillMaxSize()) {
-            item { ListHeader { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) } }
-            item {
-                Text(
-                    text = "$workCount work · ${formatDuration(totalSeconds)} total",
-                    style = MaterialTheme.typography.caption1,
-                    color = MaterialTheme.colors.onSurfaceVariant,
-                )
-            }
-            item {
-                Chip(
-                    onClick = onStart,
-                    label = { Text("Start") },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    },
-                    colors = ChipDefaults.primaryChipColors(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 4.dp),
-                )
-            }
-            intervals.forEach { interval ->
-                item {
-                    IntervalPreviewRow(interval)
-                }
+        },
+    ) { contentPadding ->
+        TransformingLazyColumn(state = columnState, contentPadding = contentPadding) {
+            item(key = "ring") { PreviewRing(workout, spec, onStart) }
+            items(workout.intervals.size, key = { "interval-$it" }) { index ->
+                IntervalRow(workout.intervals[index], spec)
             }
         }
     }
 }
 
+/** The workout as a map: every arc lit, with name, count and total inside. */
 @Composable
-private fun IntervalPreviewRow(interval: Interval) {
+private fun TransformingLazyColumnItemScope.PreviewRing(
+    workout: WorkoutItem,
+    spec: TransformationSpec,
+    onStart: () -> Unit,
+) {
+    val segments = remember(workout) {
+        ringSegments(workout.intervals, doneCount = workout.intervals.size)
+    }
+
+    Box(
+        modifier = Modifier.transformedItem(this, spec).size(RING_SIZE),
+        contentAlignment = Alignment.Center,
+    ) {
+        SessionRing(
+            segments = segments,
+            currentRemaining = { 0f },
+            modifier = Modifier.fillMaxSize(),
+            showTicks = false,
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = workout.name,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = workout.countLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            Text(text = workout.totalLabel, style = DialType.time)
+            CompactButton(
+                onClick = onStart,
+                label = { Text("START") },
+                colors = ButtonDefaults.buttonColors(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TransformingLazyColumnItemScope.IntervalRow(interval: Interval, spec: TransformationSpec) {
     val accent = when (interval.type) {
         IntervalType.WORK -> WorkAccent
         IntervalType.REST -> RestAccent
@@ -105,6 +121,7 @@ private fun IntervalPreviewRow(interval: Interval) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .transformedItem(this, spec)
             .padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -117,8 +134,7 @@ private fun IntervalPreviewRow(interval: Interval) {
         Spacer(Modifier.width(8.dp))
         Text(
             text = interval.name,
-            style = MaterialTheme.typography.caption1,
-            color = MaterialTheme.colors.onBackground,
+            style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -126,12 +142,10 @@ private fun IntervalPreviewRow(interval: Interval) {
         Spacer(Modifier.width(8.dp))
         Text(
             text = formatDuration(interval.durationSeconds),
-            style = if (LocalDial.current) {
-                DialType.caption.copy(fontSize = 13.sp)
-            } else {
-                MaterialTheme.typography.caption1
-            },
-            color = MaterialTheme.colors.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
+
+private val RING_SIZE = 172.dp

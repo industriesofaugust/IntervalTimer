@@ -21,7 +21,7 @@ import com.august.intervaltimer.MainActivity
 import com.august.intervaltimer.R
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.settings.WatchSettings
-import com.august.intervaltimer.settings.WatchSettingsRepository
+import com.august.intervaltimer.settings.WatchStores
 import com.august.intervaltimer.sync.soundVolumePercent
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
@@ -31,6 +31,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -89,7 +90,7 @@ class WorkoutService : Service() {
 
     private fun watchSession() {
         scope.launch {
-            WatchSettingsRepository(applicationContext).settings.collect { settings = it }
+            WatchStores.settings.filterNotNull().collect { settings = it }
         }
         scope.launch {
             WorkoutSession.cues.collect { playCue(it) }

@@ -82,7 +82,7 @@ object WorkoutSession {
      * With the screen off or dimmed, a slower tick saves battery.
      */
     fun setSmoothTicks(smooth: Boolean) {
-        engine.tickMillis = if (smooth) 50L else 200L
+        engine.tickMillis = if (smooth) 100L else 200L
     }
 
     // --- Called by WorkoutService, which runs in the foreground. ---

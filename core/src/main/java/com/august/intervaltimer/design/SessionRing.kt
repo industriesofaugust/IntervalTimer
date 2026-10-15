@@ -96,12 +96,25 @@ fun ringSegments(
     }
 }
 
-/** The ring for a running or finished timer. */
-fun TimerUiState.ringSegments(): List<RingSegment> = when (phase) {
+/**
+ * The ring for a running or finished timer, from just the fields that decide
+ * its shape. Screens that watch those fields separately use this directly, so
+ * they don't rebuild the ring on every tick.
+ */
+fun ringSegments(
+    phase: TimerPhase,
+    intervals: List<Interval>,
+    currentIndex: Int,
+    completedIntervals: Int,
+): List<RingSegment> = when (phase) {
     TimerPhase.LEAD_IN -> ringSegments(intervals)
     TimerPhase.RUNNING -> ringSegments(intervals, doneCount = currentIndex, currentIndex = currentIndex)
     TimerPhase.FINISHED -> ringSegments(intervals, doneCount = completedIntervals)
 }
+
+/** The ring for a running or finished timer. */
+fun TimerUiState.ringSegments(): List<RingSegment> =
+    ringSegments(phase, intervals, currentIndex, completedIntervals)
 
 /** How much of the current interval is left, from 1 (just started) to 0. */
 val TimerUiState.currentRemainingFraction: Float

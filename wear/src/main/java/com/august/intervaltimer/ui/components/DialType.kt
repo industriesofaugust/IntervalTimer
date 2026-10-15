@@ -1,24 +1,23 @@
 package com.august.intervaltimer.ui.components
 
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontLoadingStrategy
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.august.intervaltimer.core.R as CoreR
 
-/** True when the watch is using the Dial style, false for Minimal. */
-val LocalDial = compositionLocalOf { true }
-
 // Both fonts are "variable": one file holds every weight, and the
-// variation setting picks which one to draw.
+// variation setting picks which one to draw. They load asynchronously so
+// MainActivity can load them in the background before the first screen.
 @OptIn(ExperimentalTextApi::class)
 private fun variable(resId: Int, weight: Int) = Font(
     resId = resId,
     weight = FontWeight(weight),
+    loadingStrategy = FontLoadingStrategy.Async,
     variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
 )
 
@@ -35,6 +34,7 @@ val GroteskFamily = FontFamily(
     variable(CoreR.font.space_grotesk, 700),
 )
 
+/** The special sizes of the timer face, which the theme's type scale doesn't have. */
 object DialType {
     /** The big timer number. */
     val countdown = TextStyle(fontFamily = MonoFamily, fontWeight = FontWeight.Medium, fontSize = 60.sp)
@@ -45,7 +45,7 @@ object DialType {
     /** Totals on the finish and preview screens. */
     val time = TextStyle(fontFamily = MonoFamily, fontWeight = FontWeight.Medium, fontSize = 30.sp)
 
-    /** "WORK 3/5", section headings. */
+    /** "WORK 3/5". */
     val label = TextStyle(
         fontFamily = MonoFamily,
         fontWeight = FontWeight.Bold,
@@ -61,14 +61,4 @@ object DialType {
         letterSpacing = 0.5.sp,
     )
     val caption = TextStyle(fontFamily = MonoFamily, fontWeight = FontWeight.Normal, fontSize = 11.sp)
-    val figure = TextStyle(fontFamily = MonoFamily, fontWeight = FontWeight.Medium, fontSize = 20.sp)
-
-    /** Template names in lists. */
-    val name = TextStyle(fontFamily = GroteskFamily, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-    val button = TextStyle(
-        fontFamily = MonoFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 12.sp,
-        letterSpacing = 1.sp,
-    )
 }

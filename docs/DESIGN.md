@@ -114,8 +114,9 @@ Style setting (Dial / Minimal) only changes the timer face.
 - Home: Resume (only while a workout runs), the last two workouts as cards
   (name, `15 INTERVALS · 3:50`, strip), then `WORKOUTS`, `NEW`, `SETTINGS`.
 - Workouts: one list, `MINE` (from the phone) then `STARTERS`.
-- Preview: the ring with name, count and total, the interval list, and
-  `START` as the edge button.
+- Preview: the ring with name, count, total and a `START` button inside it
+  (tappable straight away), then the interval list, with `START` again as
+  the edge button at the end.
 - New: three rows (rounds, work, rest) with − and +, tap a time for a
   minutes:seconds picker, total, a `SAVE TO PHONE` switch, `START` as the
   edge button.

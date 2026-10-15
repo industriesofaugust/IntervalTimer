@@ -67,6 +67,22 @@ class SessionRingTest {
     }
 
     @Test
+    fun `the ring can be built from just the fields that shape it`() {
+        val ended = TimerUiState(
+            intervals = session,
+            currentIndex = 1,
+            phase = TimerPhase.FINISHED,
+            endedEarly = true,
+            completedIntervals = 2,
+        )
+
+        assertEquals(
+            ended.ringSegments(),
+            ringSegments(TimerPhase.FINISHED, session, currentIndex = 1, completedIntervals = 2),
+        )
+    }
+
+    @Test
     fun `nothing is done during the lead in and everything after a full session`() {
         val leadIn = TimerUiState(intervals = session, phase = TimerPhase.LEAD_IN)
         val finished = TimerUiState(

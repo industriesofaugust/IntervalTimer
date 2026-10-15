@@ -1,12 +1,14 @@
 package com.august.intervaltimer.ui
 
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,50 +20,43 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.CircularProgressIndicator
-import androidx.wear.compose.material.Icon
-import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.FilledTonalIconButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButtonDefaults
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import com.august.intervaltimer.design.CountdownFormat
-import com.august.intervaltimer.design.currentRemainingFraction
 import com.august.intervaltimer.design.formatCountdown
-import com.august.intervaltimer.design.intervalCountLabel
-import com.august.intervaltimer.design.ringSegments
 import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.timer.TimerPhase
-import com.august.intervaltimer.timer.TimerUiState
+import com.august.intervaltimer.ui.components.ButtonIcon
 import com.august.intervaltimer.ui.components.DialType
+import com.august.intervaltimer.ui.components.HoldToEndButton
 import com.august.intervaltimer.ui.components.SessionRing
 import com.august.intervaltimer.workout.WorkoutSession
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private fun accentFor(type: IntervalType?): Color = when (type) {
@@ -71,22 +66,26 @@ private fun accentFor(type: IntervalType?): Color = when (type) {
 }
 
 /** "WORK 3/5": the phase and where we are in the session. */
-private fun dialLabel(state: TimerUiState): String = when {
-    state.isPaused -> "PAUSED"
-    state.phase == TimerPhase.LEAD_IN -> "GET READY"
+private fun dialLabel(view: TimerView): String = when {
+    view.isPaused -> "PAUSED"
+    view.phase == TimerPhase.LEAD_IN -> "GET READY"
     else -> {
-        val phase = if (state.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
-        "$phase ${state.currentIndex + 1}/${state.intervals.size}"
+        val phase = if (view.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
+        "$phase ${view.currentIndex + 1}/${view.intervals.size}"
     }
 }
 
 /** True on the screens that preview what is coming: rest and get-ready. */
-private fun showsUpNext(state: TimerUiState): Boolean =
-    state.phase == TimerPhase.LEAD_IN || state.currentInterval?.type == IntervalType.REST
+private fun showsUpNext(view: TimerView): Boolean =
+    view.phase == TimerPhase.LEAD_IN || view.currentInterval?.type == IntervalType.REST
 
+/**
+ * The big number. It is its own function so that only this recomposes when
+ * the second changes; the rest of the face waits for the interval to change.
+ */
 @Composable
-private fun Countdown(state: TimerUiState, format: CountdownFormat, color: Color) {
-    val text = formatCountdown(state.remainingSeconds, format)
+private fun Countdown(view: TimerView, format: CountdownFormat, color: Color) {
+    val text = formatCountdown(view.remainingSeconds, format)
     Text(
         text = text,
         style = if (text.length > 3) DialType.countdownWide else DialType.countdown,
@@ -95,22 +94,43 @@ private fun Countdown(state: TimerUiState, format: CountdownFormat, color: Color
     )
 }
 
+/** The heart rate line, when there is one. Changes in the reading only touch this. */
+@Composable
+private fun HeartRateLine(live: State<LiveMetrics>) {
+    val heartRate = live.value.currentHeartRate ?: return
+    Spacer(Modifier.height(4.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Filled.Favorite,
+            contentDescription = null,
+            tint = WorkAccent,
+            modifier = Modifier.size(11.dp),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = "${heartRate.roundToInt()}",
+            style = DialType.caption,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /**
  * The running timer. The screen shows only information; tapping anywhere
  * brings up pause, skip, and end for a few seconds.
  */
 @Composable
-internal fun DialRunningContent(state: TimerUiState, live: LiveMetrics, format: CountdownFormat) {
+internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, format: CountdownFormat) {
     val accent by animateColorAsState(
-        targetValue = if (state.phase == TimerPhase.LEAD_IN) ReadyAccent else accentFor(state.currentInterval?.type),
+        targetValue = if (view.phase == TimerPhase.LEAD_IN) ReadyAccent else accentFor(view.currentInterval?.type),
         animationSpec = tween(durationMillis = 400),
         label = "accent",
     )
 
     var controlsVisible by remember { mutableStateOf(false) }
     // Controls stay up while paused, otherwise they tuck away on their own.
-    LaunchedEffect(controlsVisible, state.isPaused) {
-        if (controlsVisible && !state.isPaused) {
+    LaunchedEffect(controlsVisible, view.isPaused) {
+        if (controlsVisible && !view.isPaused) {
             delay(4_000)
             controlsVisible = false
         }
@@ -125,8 +145,8 @@ internal fun DialRunningContent(state: TimerUiState, live: LiveMetrics, format: 
             ) { controlsVisible = !controlsVisible },
     ) {
         SessionRing(
-            segments = state.ringSegments(),
-            currentRemaining = state.currentRemainingFraction,
+            segments = view.rememberRingSegments(),
+            currentRemaining = { view.remainingFraction() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(3.dp),
@@ -138,19 +158,19 @@ internal fun DialRunningContent(state: TimerUiState, live: LiveMetrics, format: 
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(text = dialLabel(state), style = DialType.label, color = accent)
-            Countdown(state, format, MaterialTheme.colors.onBackground)
-            if (showsUpNext(state)) {
-                UpNext(state.nextInterval)
+            Text(text = dialLabel(view), style = DialType.label, color = accent)
+            Countdown(view, format, MaterialTheme.colorScheme.onBackground)
+            val next = view.nextInterval
+            if (showsUpNext(view)) {
+                UpNext(next)
             } else {
                 Text(
-                    text = state.currentInterval?.name.orEmpty().uppercase(),
+                    text = view.currentInterval?.name.orEmpty().uppercase(),
                     style = DialType.exercise,
-                    color = MaterialTheme.colors.onBackground,
+                    color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val next = state.nextInterval
                 Text(
                     text = if (next != null) {
                         "NEXT ${next.name.uppercase()} ${formatDuration(next.durationSeconds)}"
@@ -158,56 +178,47 @@ internal fun DialRunningContent(state: TimerUiState, live: LiveMetrics, format: 
                         "LAST ONE"
                     },
                     style = DialType.caption,
-                    color = MaterialTheme.colors.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            val heartRate = live.currentHeartRate
-            if (heartRate != null) {
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Favorite,
-                        contentDescription = null,
-                        tint = WorkAccent,
-                        modifier = Modifier.size(11.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "${heartRate.roundToInt()}",
-                        style = DialType.caption,
-                        color = MaterialTheme.colors.onSurfaceVariant,
-                    )
-                }
-            }
+            HeartRateLine(live)
         }
 
-        if (controlsVisible || state.isPaused) {
+        AnimatedVisibility(
+            visible = controlsVisible || view.isPaused,
+            enter = fadeIn(tween(CONTROLS_FADE_MILLIS)),
+            exit = fadeOut(tween(CONTROLS_FADE_MILLIS)),
+        ) {
             ControlsOverlay(
-                isPaused = state.isPaused,
-                onTogglePause = WorkoutSession::togglePause,
+                isPaused = view.isPaused,
                 onSkip = {
                     WorkoutSession.skip()
                     controlsVisible = false
                 },
-                onEnd = WorkoutSession::endEarly,
             )
         }
     }
 }
 
+private const val CONTROLS_FADE_MILLIS = 150
+
 /** "UP NEXT / BURPEES / 0:40": shown while resting and during get-ready. */
 @Composable
 private fun UpNext(next: Interval?) {
     if (next == null) {
-        Text(text = "LAST ONE", style = DialType.exercise, color = MaterialTheme.colors.onBackground)
+        Text(
+            text = "LAST ONE",
+            style = DialType.exercise,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
         return
     }
     Text(
         text = "UP NEXT",
         style = DialType.caption.copy(letterSpacing = DialType.label.letterSpacing),
-        color = MaterialTheme.colors.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Text(
         text = next.name.uppercase(),
@@ -219,17 +230,13 @@ private fun UpNext(next: Interval?) {
     Text(
         text = formatDuration(next.durationSeconds),
         style = DialType.caption,
-        color = MaterialTheme.colors.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
+/** Pause, skip and end over a dark scrim. */
 @Composable
-private fun ControlsOverlay(
-    isPaused: Boolean,
-    onTogglePause: () -> Unit,
-    onSkip: () -> Unit,
-    onEnd: () -> Unit,
-) {
+private fun ControlsOverlay(isPaused: Boolean, onSkip: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -241,107 +248,40 @@ private fun ControlsOverlay(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HoldToEndButton(onEnd = onEnd)
-            ControlButton(
-                icon = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                description = if (isPaused) "Resume" else "Pause",
-                large = true,
-                onClick = onTogglePause,
-            )
-            ControlButton(
-                icon = Icons.Filled.SkipNext,
-                description = "Skip interval",
-                large = false,
+            HoldToEndButton(onEnd = WorkoutSession::endEarly)
+            FilledIconButton(
+                onClick = WorkoutSession::togglePause,
+                modifier = Modifier.size(IconButtonDefaults.LargeButtonSize),
+            ) {
+                ButtonIcon(
+                    icon = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    description = if (isPaused) "Resume" else "Pause",
+                    buttonSize = IconButtonDefaults.LargeButtonSize,
+                )
+            }
+            FilledTonalIconButton(
                 onClick = onSkip,
-            )
+                modifier = Modifier.size(IconButtonDefaults.DefaultButtonSize),
+            ) {
+                ButtonIcon(Icons.Filled.SkipNext, "Skip interval", IconButtonDefaults.DefaultButtonSize)
+            }
         }
         Spacer(Modifier.height(10.dp))
         Text(
             text = if (isPaused) "PAUSED · HOLD ■ TO END" else "HOLD ■ TO END",
             style = DialType.caption,
-            color = MaterialTheme.colors.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
-
-@Composable
-private fun ControlButton(
-    icon: ImageVector,
-    description: String,
-    large: Boolean,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .size(if (large) 60.dp else 48.dp)
-            .clip(CircleShape)
-            .background(if (large) WorkAccent else MaterialTheme.colors.surface)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = description,
-            tint = if (large) MaterialTheme.colors.onPrimary else MaterialTheme.colors.onSurface,
-            modifier = Modifier.size(if (large) 28.dp else 22.dp),
-        )
-    }
-}
-
-/**
- * Ends the workout only after being held for a second, so a stray touch
- * mid-exercise can't throw the session away. A ring fills while held.
- */
-@Composable
-private fun HoldToEndButton(onEnd: () -> Unit) {
-    val progress = remember { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-
-    Box(
-        modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colors.surface)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        val hold = scope.launch {
-                            progress.animateTo(1f, tween(HOLD_MILLIS, easing = LinearEasing))
-                            onEnd()
-                        }
-                        tryAwaitRelease()
-                        hold.cancel()
-                        progress.snapTo(0f)
-                    },
-                )
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator(
-            progress = progress.value,
-            modifier = Modifier.fillMaxSize(),
-            indicatorColor = ReadyAccent,
-            trackColor = Color.Transparent,
-            strokeWidth = 3.dp,
-        )
-        Icon(
-            imageVector = Icons.Filled.Stop,
-            contentDescription = "Hold to end workout",
-            tint = MaterialTheme.colors.onSurface,
-            modifier = Modifier.size(22.dp),
-        )
-    }
-}
-
-private const val HOLD_MILLIS = 1_000
 
 /** The dimmed screen: thin outlines and the essentials, nothing lit. */
 @Composable
-internal fun DialAmbientContent(state: TimerUiState, format: CountdownFormat) {
+internal fun DialAmbientContent(view: TimerView, format: CountdownFormat) {
     Box(modifier = Modifier.fillMaxSize()) {
         SessionRing(
-            segments = state.ringSegments(),
-            currentRemaining = state.currentRemainingFraction,
+            segments = view.rememberRingSegments(),
+            currentRemaining = { view.remainingFraction() },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(3.dp),
@@ -354,11 +294,11 @@ internal fun DialAmbientContent(state: TimerUiState, format: CountdownFormat) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(text = dialLabel(state), style = DialType.label, color = Color.Gray)
-            Countdown(state, format, Color.LightGray)
-            if (state.phase != TimerPhase.LEAD_IN) {
+            Text(text = dialLabel(view), style = DialType.label, color = Color.Gray)
+            Countdown(view, format, Color.LightGray)
+            if (view.phase != TimerPhase.LEAD_IN) {
                 Text(
-                    text = state.currentInterval?.name.orEmpty().uppercase(),
+                    text = view.currentInterval?.name.orEmpty().uppercase(),
                     style = DialType.exercise,
                     color = Color.Gray,
                     maxLines = 1,
@@ -370,12 +310,14 @@ internal fun DialAmbientContent(state: TimerUiState, format: CountdownFormat) {
 }
 
 @Composable
-internal fun DialFinishedContent(state: TimerUiState, live: LiveMetrics, onDone: () -> Unit) {
+internal fun DialFinishedContent(view: TimerView, live: State<LiveMetrics>, onDone: () -> Unit) {
+    val elapsed = remember(view.elapsedSecondsAtEnd) { formatDuration(view.elapsedSecondsAtEnd) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Completed intervals are lit; anything left after ending early is grey.
         SessionRing(
-            segments = state.ringSegments(),
-            currentRemaining = 0f,
+            segments = view.rememberRingSegments(),
+            currentRemaining = { 0f },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(3.dp),
@@ -389,94 +331,54 @@ internal fun DialFinishedContent(state: TimerUiState, live: LiveMetrics, onDone:
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = if (state.endedEarly) "ENDED" else "COMPLETE",
+                text = if (view.endedEarly) "ENDED" else "COMPLETE",
                 style = DialType.label,
-                color = if (state.endedEarly) ReadyAccent else RestAccent,
+                color = if (view.endedEarly) ReadyAccent else RestAccent,
             )
+            Text(text = elapsed, style = DialType.time, color = MaterialTheme.colorScheme.onBackground)
             Text(
-                text = formatDuration(state.elapsedSecondsAtEnd),
-                style = DialType.time,
-                color = MaterialTheme.colors.onBackground,
-            )
-            Text(
-                text = "${state.completedIntervals}/${state.intervals.size} INTERVALS",
+                text = "${view.completedIntervals}/${view.intervals.size} INTERVALS",
                 style = DialType.caption,
-                color = MaterialTheme.colors.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val avg = live.averageHeartRate
-            val max = live.maxHeartRate
-            if (avg != null && max != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Favorite,
-                        contentDescription = null,
-                        tint = WorkAccent,
-                        modifier = Modifier.size(11.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = "${avg.roundToInt()} AVG · ${max.roundToInt()} MAX",
-                        style = DialType.caption,
-                        color = MaterialTheme.colors.onSurfaceVariant,
-                    )
-                }
-            }
-            if (live.steps > 0 || live.calories > 0) {
-                Text(
-                    text = "${live.steps} STEPS · ${live.calories.roundToInt()} KCAL",
-                    style = DialType.caption,
-                    color = MaterialTheme.colors.onSurfaceVariant,
-                )
-            }
+            FinishedStats(live)
             Spacer(Modifier.height(6.dp))
-            Chip(
-                onClick = onDone,
-                label = { Text("DONE", style = DialType.button) },
-                colors = ChipDefaults.primaryChipColors(),
-            )
+            Button(onClick = onDone, modifier = Modifier.width(DONE_BUTTON_WIDTH)) {
+                Text("DONE", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            }
         }
     }
 }
 
-/** The centre of the preview screen: the session as a map, with Start. */
+private val DONE_BUTTON_WIDTH = 108.dp
+
+/** Heart rate, steps and calories, for the lines under the summary. */
 @Composable
-internal fun DialPreviewHeader(name: String, intervals: List<Interval>, onStart: () -> Unit) {
-    Box(modifier = Modifier.size(176.dp), contentAlignment = Alignment.Center) {
-        SessionRing(
-            // Every interval lit, so the ring reads as a map of the workout.
-            segments = ringSegments(intervals, doneCount = intervals.size),
-            currentRemaining = 0f,
-            modifier = Modifier.fillMaxSize(),
-            showTicks = false,
-        )
-        Column(
-            modifier = Modifier.padding(horizontal = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = name,
-                style = DialType.name,
-                color = MaterialTheme.colors.onBackground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+private fun FinishedStats(live: State<LiveMetrics>) {
+    val metrics = live.value
+    val avg = metrics.averageHeartRate
+    val max = metrics.maxHeartRate
+    if (avg != null && max != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = null,
+                tint = WorkAccent,
+                modifier = Modifier.size(11.dp),
             )
+            Spacer(Modifier.width(4.dp))
             Text(
-                text = intervalCountLabel(intervals.size),
+                text = "${avg.roundToInt()} AVG · ${max.roundToInt()} MAX",
                 style = DialType.caption,
-                color = MaterialTheme.colors.onSurfaceVariant,
-            )
-            Text(
-                text = formatDuration(intervals.sumOf { it.durationSeconds }),
-                style = DialType.time,
-                color = MaterialTheme.colors.onBackground,
-            )
-            Spacer(Modifier.height(4.dp))
-            Chip(
-                onClick = onStart,
-                label = { Text("START", style = DialType.button) },
-                colors = ChipDefaults.primaryChipColors(),
-                modifier = Modifier.height(36.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+    if (metrics.steps > 0 || metrics.calories > 0) {
+        Text(
+            text = "${metrics.steps} STEPS · ${metrics.calories.roundToInt()} KCAL",
+            style = DialType.caption,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
