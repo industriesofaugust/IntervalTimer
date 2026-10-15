@@ -72,8 +72,7 @@ private fun dialLabel(view: TimerView): String = when {
     view.isPaused -> "PAUSED"
     view.phase == TimerPhase.LEAD_IN -> "GET READY"
     else -> {
-        val phase = if (view.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
-        "$phase ${view.currentIndex + 1}/${view.intervals.size}"
+        if (view.currentInterval?.type == IntervalType.WORK) "WORK" else "REST"
     }
 }
 

@@ -130,15 +130,6 @@ private fun AmbientContent(view: TimerView) {
                 color = Color.Gray,
             )
             RemainingTime(view, fontSize = 46.sp, color = Color.LightGray)
-            Text(
-                text = if (view.phase == TimerPhase.LEAD_IN) {
-                    "${view.intervals.size} intervals"
-                } else {
-                    "${view.currentIndex + 1} of ${view.intervals.size}"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-            )
         }
     }
 }
@@ -188,11 +179,7 @@ private fun RunningContent(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = if (view.phase == TimerPhase.LEAD_IN) {
-                    phaseLabel(view).uppercase()
-                } else {
-                    "${phaseLabel(view).uppercase()} · ${view.currentIndex + 1}/${view.intervals.size}"
-                },
+                text = phaseLabel(view).uppercase(),
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
                 color = accent,
             )
