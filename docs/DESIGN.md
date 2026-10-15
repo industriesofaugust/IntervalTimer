@@ -25,9 +25,9 @@ look, kept as a switchable style; Dial is the default.
 ## Text
 
 - Capitals for labels and for the exercise name **on the timer**
-  (`WORK 3/5`, `SQUATS`, `NEXT REST 0:20`). Template names are normal case
+  (`WORK`, `SQUATS`, `NEXT REST 0:20`). Template names are normal case
   everywhere else (`Leg day`).
-- No leading zeros on counts (`5 INTERVALS`, `WORK 3/5`).
+- No leading zeros on counts (`5 INTERVALS`). The watch timer label is just `WORK` or `REST`, with no count, to keep attention on the present (phone still shows `WORK 3/5`).
 - Countdown shows bare seconds by default, even over a minute (1:30 is `90`).
   A setting switches it to `1:30`. All other durations use `0:24`.
 - JetBrains Mono for numerals and labels, Space Grotesk for titles.
