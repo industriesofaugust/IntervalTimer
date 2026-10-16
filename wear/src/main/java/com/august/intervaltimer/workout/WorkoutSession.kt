@@ -323,6 +323,7 @@ object WorkoutSession {
         val app = appContext ?: return
         val activeRecorder = recorder ?: return
         val finished = state.value
+        val linkId = link?.id
         withdrawRequest(finished)
         if (link == null) {
             requestTimeout?.cancel()
@@ -359,6 +360,7 @@ object WorkoutSession {
             hrSeries = series,
             intervals = finished.intervals.toSyncedIntervals(),
             completedIntervals = finished.completedIntervals,
+            linkId = linkId,
         )
         // Data items persist, so the result reaches the phone even if it
         // isn't nearby right now.

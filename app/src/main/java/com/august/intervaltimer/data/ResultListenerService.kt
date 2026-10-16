@@ -96,7 +96,7 @@ class ResultListenerService : WearableListenerService() {
             .dataMap.getString(SyncPaths.RESULT_KEY) ?: return
         val result = ResultSyncCodec.decode(json)
         runBlocking {
-            val entity = app.resultsRepository.insert(result)
+            val entity = app.resultsRepository.insertFromWatch(result)
             // Forward to Health Connect if the user linked it.
             val writer = HealthConnectWriter(applicationContext)
             if (writer.hasAllPermissions()) writer.write(entity)

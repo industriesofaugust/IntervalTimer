@@ -11,14 +11,18 @@ import com.august.intervaltimer.timer.TimerUiState
  * the Activity stats next to the ones from the watch. The phone has no
  * sensors, so there is no heart rate, step, or calorie data.
  */
-suspend fun TimerApp.recordPhoneWorkout(name: String?, finished: TimerUiState) {
+suspend fun TimerApp.recordPhoneWorkout(
+    name: String?,
+    finished: TimerUiState,
+    linkId: String?,
+) {
     // If the user ended early, only count what was actually done.
     val completed =
         if (finished.endedEarly) finished.intervals.take(finished.completedIntervals)
         else finished.intervals
     val workIntervals = completed.filter { it.type == IntervalType.WORK }
 
-    val entity = resultsRepository.insert(
+    val entity = resultsRepository.insertFromPhone(
         WorkoutResult(
             completedAt = System.currentTimeMillis(),
             templateName = name,
@@ -27,8 +31,9 @@ suspend fun TimerApp.recordPhoneWorkout(name: String?, finished: TimerUiState) {
             workIntervals = workIntervals.size,
             intervals = finished.intervals.toSyncedIntervals(),
             completedIntervals = finished.completedIntervals,
+            linkId = linkId,
         )
-    )
+    ) ?: return // The watch's result is already saved.
     val healthConnect = HealthConnectWriter(this)
     if (healthConnect.hasAllPermissions()) healthConnect.write(entity)
 }

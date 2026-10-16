@@ -74,6 +74,15 @@ class DatabaseMigrationTest {
                     "ON `workout_results` (`completedAt`)"
             )
         }
+        // The columns added by versions 3 to 5, the same as their migrations.
+        if (version >= 3) db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `hrSeriesJson` TEXT")
+        if (version >= 4) {
+            db.execSQL("ALTER TABLE `templates` ADD COLUMN `sortOrder` INTEGER NOT NULL DEFAULT 0")
+        }
+        if (version >= 5) {
+            db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `intervalsJson` TEXT")
+            db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `completedIntervals` INTEGER")
+        }
         fill(db)
         db.version = version
         db.close()
@@ -137,6 +146,26 @@ class DatabaseMigrationTest {
             assertNull(result.hrSeriesJson)
             assertNull(result.intervalsJson)
             assertEquals(0, result.intervals().size)
+        }
+        database.close()
+    }
+
+    @Test
+    fun `a version 5 database upgrades and keeps its results without a link id`() {
+        createOldDatabase(version = 5) { db ->
+            db.execSQL(
+                "INSERT INTO workout_results (completedAt, templateName, totalSeconds, " +
+                    "workSeconds, workIntervals, avgHeartRate, maxHeartRate, steps, calories) " +
+                    "VALUES (9000, 'Tabata', 230, 160, 8, 140.5, 171.0, 300, 47.5)"
+            )
+        }
+
+        val database = openCurrent()
+        runBlocking {
+            val result = database.resultDao().observeAll().first().single()
+            assertEquals("Tabata", result.templateName)
+            assertEquals(140.5, result.avgHeartRate!!, 0.001)
+            assertNull(result.linkId)
         }
         database.close()
     }

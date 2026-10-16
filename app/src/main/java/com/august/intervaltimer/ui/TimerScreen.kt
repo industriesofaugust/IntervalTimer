@@ -103,12 +103,16 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
     }
 
     // Save the workout to History once, when it finishes or is ended early.
-    // If the watch is running it too, the watch saves it (with heart rate).
+    // If the watch is linked, it saves it (with heart rate). A watch that has
+    // gone silent (LOST) may not, so then the phone saves its own copy, and
+    // the watch's replaces it if it turns up later.
     var saved by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.phase) {
         if (state.phase == TimerPhase.FINISHED && !saved && state.elapsedSecondsAtEnd > 0) {
             saved = true
-            if (!PhoneLiveLink.watchHasWorkout) app.recordPhoneWorkout(sessionName, state)
+            if (!PhoneLiveLink.watchSavesResult) {
+                app.recordPhoneWorkout(sessionName, state, PhoneLiveLink.currentLinkId)
+            }
         }
     }
 

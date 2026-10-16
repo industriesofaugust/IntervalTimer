@@ -56,9 +56,17 @@ class SyncCodecTest {
             steps = 312,
             calories = 48.2,
             hrSeries = listOf(HrSample(0, 98.0), HrSample(30, 150.0)),
+            linkId = "link-1",
         )
 
         assertEquals(result, ResultSyncCodec.decode(ResultSyncCodec.encode(result)))
+    }
+
+    @Test
+    fun `a result from an older watch has no link id`() {
+        val json = """{"completedAt":5,"totalSeconds":60,"workSeconds":40,"workIntervals":2}"""
+
+        assertNull(ResultSyncCodec.decode(json).linkId)
     }
 
     @Test

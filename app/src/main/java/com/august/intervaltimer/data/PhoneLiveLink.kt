@@ -63,11 +63,22 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     val state: StateFlow<LinkState> = _state.asStateFlow()
 
     /**
-     * True once the watch has the workout, even if it has gone quiet. Then the
-     * watch saves the result, so the phone must not.
+     * True once the watch has the workout, even if it has gone quiet. Messages
+     * are still sent to it, since it may come back.
      */
     val watchHasWorkout: Boolean
         get() = _state.value == LinkState.LINKED || _state.value == LinkState.LOST
+
+    /**
+     * True only while the watch is heard from. Then the watch saves the
+     * result; the phone saves its own copy in every other case, LOST included.
+     */
+    val watchSavesResult: Boolean
+        get() = _state.value == LinkState.LINKED
+
+    /** Names this workout on both devices; null when there is no link. */
+    val currentLinkId: String?
+        get() = linkId
 
     private val _metrics = MutableStateFlow<LiveMetricsUpdate?>(null)
 

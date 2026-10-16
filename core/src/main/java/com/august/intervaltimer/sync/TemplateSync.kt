@@ -157,6 +157,9 @@ data class WorkoutResult(
     // draw its shape. Absent on results saved by older versions.
     val intervals: List<SyncedInterval> = emptyList(),
     val completedIntervals: Int? = null,
+    // Set when the workout ran with the live link, so the phone can tell this
+    // result apart from the copy it saved itself. Null for unlinked workouts.
+    val linkId: String? = null,
 )
 
 object HrSeriesCodec {

@@ -24,6 +24,28 @@ class ResultsRepository(private val dao: ResultDao) {
         dao.insert(entity)
         return entity
     }
+
+    /**
+     * A result that came from the watch. If the phone already saved its own
+     * copy of the same linked workout, this replaces it, since this one has
+     * the heart rate.
+     */
+    suspend fun insertFromWatch(result: WorkoutResult): WorkoutResultEntity {
+        val linkId = result.linkId ?: return insert(result)
+        val entity = result.toEntity()
+        dao.replaceByLinkId(linkId, entity)
+        return entity
+    }
+
+    /**
+     * The phone's own result of a workout. Returns null, saving nothing, if
+     * the watch's result of the same linked workout is already here.
+     */
+    suspend fun insertFromPhone(result: WorkoutResult): WorkoutResultEntity? {
+        val linkId = result.linkId ?: return insert(result)
+        val entity = result.toEntity()
+        return if (dao.insertUnlessLinked(linkId, entity)) entity else null
+    }
 }
 
 /** The workout's intervals, or empty for results saved before they were recorded. */
@@ -46,4 +68,5 @@ private fun WorkoutResult.toEntity() = WorkoutResultEntity(
     hrSeriesJson = hrSeries.takeIf { it.isNotEmpty() }?.let { HrSeriesCodec.encode(it) },
     intervalsJson = intervals.takeIf { it.isNotEmpty() }?.let { IntervalListCodec.encode(it) },
     completedIntervals = completedIntervals,
+    linkId = linkId,
 )

@@ -66,4 +66,7 @@ data class WorkoutResultEntity(
     // shape in History. Null on results saved before version 5.
     val intervalsJson: String? = null,
     val completedIntervals: Int? = null,
+    // Ties the phone's own copy to the watch's copy of the same linked
+    // workout. Null before version 6, and for workouts that were not linked.
+    val linkId: String? = null,
 )
