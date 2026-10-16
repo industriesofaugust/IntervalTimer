@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -226,9 +227,12 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                     .consumeWindowInsets(innerPadding),
             ) {
                 composable("home") {
+                    // History selection mode pauses page swiping (see ActivityScreen).
+                    var historySelecting by remember { mutableStateOf(false) }
                     HorizontalPager(
                         state = pagerState,
                         beyondViewportPageCount = 1,
+                        userScrollEnabled = !historySelecting,
                         modifier = Modifier.fillMaxSize(),
                     ) { page ->
                         when (page) {
@@ -244,6 +248,7 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                             )
                             1 -> ActivityScreen(
                                 onOpenWorkout = { id -> navController.navigate("workout/$id") },
+                                onSelectingChange = { historySelecting = it },
                             )
                             else -> PhoneSettingsScreen()
                         }

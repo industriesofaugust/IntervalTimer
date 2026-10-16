@@ -38,6 +38,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -133,6 +134,7 @@ private fun formatLongDuration(totalSeconds: Int): String {
 @Composable
 fun ActivityScreen(
     onOpenWorkout: (Long) -> Unit,
+    onSelectingChange: (Boolean) -> Unit = {},
     viewModel: ActivityViewModel = viewModel(),
 ) {
     val results by viewModel.results.collectAsState()
@@ -141,6 +143,9 @@ fun ActivityScreen(
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val undoLabel = "Undo".labelCase()
+
+    // While selecting, a sideways swipe on a card deletes it, so page swiping is paused.
+    LaunchedEffect(selecting) { onSelectingChange(selecting) }
 
     // Leaves selection mode before the app goes back a page.
     BackHandler(enabled = selecting) { selected = emptySet() }
