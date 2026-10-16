@@ -353,20 +353,21 @@ private fun SwipeToDeleteBox(
 ) {
     val currentOnDelete by rememberUpdatedState(onDelete)
     val state = rememberSwipeToDismissBoxState(
+        // The card is hidden by the list as soon as it is deleted, so the box itself
+        // never stays swiped away. If it did, the swipe state is saved per card and a
+        // card brought back with UNDO would come back stuck off to the side.
         confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                currentOnDelete()
-                true
-            } else {
-                false
-            }
+            if (value == SwipeToDismissBoxValue.EndToStart) currentOnDelete()
+            false
         },
     )
     SwipeToDismissBox(
         state = state,
         modifier = modifier,
         enableDismissFromStartToEnd = false,
-        gesturesEnabled = enabled,
+        // Swipe-to-delete is switched off until a repeated-delete bug is fixed and tested
+        // on a separate test build; select + DELETE still works.
+        gesturesEnabled = false,
         backgroundContent = {
             if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
                 Row(
