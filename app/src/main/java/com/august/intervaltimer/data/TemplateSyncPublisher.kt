@@ -13,12 +13,15 @@ import kotlinx.coroutines.tasks.await
 /**
  * Publishes the template list to the Wearable Data Layer. Data items are
  * persistent and synced: the watch receives the latest version whenever it
- * connects, even if it was off when the templates changed.
+ * connects, even if it was off when the templates changed. Every publish
+ * carries the current time, so publishing an unchanged list still reaches
+ * the watch (that is what SYNC NOW relies on).
  */
 class TemplateSyncPublisher(private val context: Context) {
 
     suspend fun publish(templates: List<TemplateWithIntervals>) {
-        val payload = TemplateSyncCodec.encode(templates.toSyncedList())
+        val list = templates.toSyncedList().copy(publishedAtEpochMillis = System.currentTimeMillis())
+        val payload = TemplateSyncCodec.encode(list)
         val request = PutDataMapRequest.create(SyncPaths.TEMPLATES_PATH).apply {
             dataMap.putString(SyncPaths.TEMPLATES_KEY, payload)
         }.asPutDataRequest().setUrgent()

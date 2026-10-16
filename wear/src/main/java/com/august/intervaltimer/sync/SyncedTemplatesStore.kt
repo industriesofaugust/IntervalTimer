@@ -34,6 +34,16 @@ class SyncedTemplatesStore(context: Context, scope: CoroutineScope) :
     private val _templates = MutableStateFlow<List<SyncedTemplate>>(emptyList())
     val templates: StateFlow<List<SyncedTemplate>> = _templates.asStateFlow()
 
+    private val _receivedAt = MutableStateFlow<Long?>(null)
+
+    /** When the latest template list arrived; null if no list has arrived yet. */
+    val receivedAt: StateFlow<Long?> = _receivedAt.asStateFlow()
+
+    private val _loaded = MutableStateFlow(false)
+
+    /** True once the first read of the saved templates is done, found or not. */
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
     init {
         // In the background, so starting the app never waits for Google Play services.
         scope.launch {
@@ -44,6 +54,7 @@ class SyncedTemplatesStore(context: Context, scope: CoroutineScope) :
                     .await()
             }
             runCatching { loadCurrentTemplates(dataClient) }
+            _loaded.value = true
         }
     }
 
@@ -51,7 +62,7 @@ class SyncedTemplatesStore(context: Context, scope: CoroutineScope) :
     private suspend fun loadCurrentTemplates(dataClient: DataClient) {
         val buffer = dataClient.getDataItems(templatesUri, DataClient.FILTER_LITERAL).await()
         try {
-            buffer.forEach { item -> readItem(item) }
+            buffer.forEach { item -> readItem(item, arrivedJustNow = false) }
         } finally {
             buffer.release()
         }
@@ -60,16 +71,24 @@ class SyncedTemplatesStore(context: Context, scope: CoroutineScope) :
     /** Called by the system the moment the phone publishes a change. */
     override fun onDataChanged(events: DataEventBuffer) {
         events.forEach { event ->
-            if (event.type == DataEvent.TYPE_CHANGED) readItem(event.dataItem)
+            if (event.type == DataEvent.TYPE_CHANGED) readItem(event.dataItem, arrivedJustNow = true)
         }
     }
 
-    private fun readItem(item: DataItem) {
+    private fun readItem(item: DataItem, arrivedJustNow: Boolean) {
         if (item.uri.path != SyncPaths.TEMPLATES_PATH) return
         runCatching {
             val json = DataMapItem.fromDataItem(item).dataMap.getString(SyncPaths.TEMPLATES_KEY)
             if (json != null) {
-                _templates.value = TemplateSyncCodec.decode(json).templates
+                val list = TemplateSyncCodec.decode(json)
+                _templates.value = list.templates
+                if (arrivedJustNow) {
+                    _receivedAt.value = System.currentTimeMillis()
+                } else if (_receivedAt.value == null) {
+                    // Found on start-up: the best "received" time we have is
+                    // when the phone sent it (0 on lists from older phones).
+                    _receivedAt.value = list.publishedAtEpochMillis.takeIf { it > 0 }
+                }
             }
         }
     }

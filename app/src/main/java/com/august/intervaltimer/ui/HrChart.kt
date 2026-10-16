@@ -19,10 +19,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.august.intervaltimer.health.HeartRateZones
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.sync.HrSample
+import com.august.intervaltimer.timer.IntervalSpan
 import com.august.intervaltimer.timer.TimerUiState
 import com.august.intervaltimer.ui.theme.MonoFamily
 import com.august.intervaltimer.ui.theme.isAppInDarkTheme
@@ -40,15 +42,20 @@ import kotlin.math.roundToInt
  * and recovering during rest. A dotted line marks the average and a tagged
  * point marks the maximum.
  *
- * The bands assume the workout ran without pauses or skips; if it didn't,
- * they drift from the line.
+ * Bands come from when each interval really ran (see [timedBands]); for old
+ * workouts that did not record it, they are laid out from the planned
+ * durations (see [plannedBands]) and drift if the workout was paused or skipped.
+ *
+ * Faint lines mark where each heart-rate zone starts, labelled at the right
+ * edge, when [zones] is known.
  */
 @Composable
 fun HrChart(
     series: List<HrSample>,
-    intervals: List<Interval>,
-    totalSeconds: Int,
+    bands: List<HrBand>,
+    endSeconds: Int,
     modifier: Modifier = Modifier,
+    zones: HeartRateZones? = null,
 ) {
     val dark = isAppInDarkTheme()
     val dial = isDial()
@@ -69,26 +76,23 @@ fun HrChart(
     Canvas(modifier = modifier) {
         if (series.size < 2) return@Canvas
 
-        val leadIn = (TimerUiState.LEAD_IN_MILLIS / 1000).toInt()
         // The chart covers what was actually done, so a workout that ended
         // early is not squeezed into the corner of its planned length.
-        val maxElapsed = maxOf(series.maxOf { it.elapsedSeconds }, leadIn + totalSeconds).coerceAtLeast(1)
+        val maxElapsed = maxOf(series.maxOf { it.elapsedSeconds }, endSeconds).coerceAtLeast(1)
 
         val minBpm = floor(series.minOf { it.bpm } / 10.0) * 10.0 - 5.0
         val maxBpm = ceil(series.maxOf { it.bpm } / 10.0) * 10.0 + 10.0
         val bpmRange = (maxBpm - minBpm).coerceAtLeast(1.0)
 
         val chartHeight = size.height - 20.dp.toPx()
-        fun x(seconds: Int) = size.width * (seconds.toFloat() / maxElapsed)
+        fun x(seconds: Float) = size.width * (seconds / maxElapsed)
         fun y(bpm: Double) = chartHeight * (1f - ((bpm - minBpm) / bpmRange).toFloat())
 
-        // Interval bands, starting after the five-second get-ready.
-        var start = leadIn
-        intervals.forEach { interval ->
-            if (start >= maxElapsed) return@forEach
-            val left = x(start)
-            val width = x(minOf(start + interval.durationSeconds, maxElapsed)) - left
-            val work = interval.type == IntervalType.WORK
+        bands.forEach { band ->
+            if (band.startSeconds >= maxElapsed) return@forEach
+            val left = x(band.startSeconds)
+            val width = x(minOf(band.endSeconds, maxElapsed.toFloat())) - left
+            val work = band.type == IntervalType.WORK
             drawRect(
                 color = if (work) workBand else restBand,
                 topLeft = Offset(left, 0f),
@@ -99,7 +103,26 @@ fun HrChart(
                 topLeft = Offset(left, 0f),
                 size = Size(width, 3.dp.toPx()),
             )
-            start += interval.durationSeconds
+        }
+
+        // Where each heart-rate zone starts: a faint line, named at the right edge.
+        zones?.lowerBounds?.forEachIndexed { index, bound ->
+            if (bound < minBpm || bound > maxBpm) return@forEachIndexed
+            val lineY = y(bound.toDouble())
+            drawLine(
+                color = lineColor.copy(alpha = 0.18f),
+                start = Offset(0f, lineY),
+                end = Offset(size.width, lineY),
+                strokeWidth = 1.dp.toPx(),
+            )
+            val zoneLabel = textMeasurer.measure(
+                "Z${index + 1}",
+                labelStyle.copy(fontSize = 9.sp, color = labelColor.copy(alpha = 0.8f)),
+            )
+            drawText(
+                zoneLabel,
+                topLeft = Offset(size.width - zoneLabel.size.width - 2.dp.toPx(), lineY - zoneLabel.size.height),
+            )
         }
 
         // Average: a dotted line with its value.
@@ -116,7 +139,7 @@ fun HrChart(
         // The heart-rate line itself.
         val path = Path()
         series.forEachIndexed { index, sample ->
-            val point = Offset(x(sample.elapsedSeconds), y(sample.bpm))
+            val point = Offset(x(sample.elapsedSeconds.toFloat()), y(sample.bpm))
             if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
         }
         drawPath(
@@ -139,7 +162,7 @@ fun HrChart(
 
         // Maximum: a ringed point with a tag.
         val peak = series.maxBy { it.bpm }
-        val peakPoint = Offset(x(peak.elapsedSeconds), y(peak.bpm))
+        val peakPoint = Offset(x(peak.elapsedSeconds.toFloat()), y(peak.bpm))
         drawCircle(color = surface, radius = 5.dp.toPx(), center = peakPoint)
         drawCircle(color = lineColor, radius = 5.dp.toPx(), center = peakPoint, style = Stroke(2.dp.toPx()))
         val peakLabel = textMeasurer.measure(
@@ -168,5 +191,36 @@ fun HrChart(
         )
         val endLabel = textMeasurer.measure(formatDuration(maxElapsed), labelStyle)
         drawText(endLabel, topLeft = Offset(size.width - endLabel.size.width, chartHeight + 5.dp.toPx()))
+    }
+}
+
+/** One stretch of the chart's background, in seconds from the moment recording began. */
+data class HrBand(val type: IntervalType, val startSeconds: Float, val endSeconds: Float)
+
+private val LEAD_IN_SECONDS = (TimerUiState.LEAD_IN_MILLIS / 1000).toInt()
+
+/** Bands laid end to end from the planned durations, after the get-ready. */
+fun plannedBands(intervals: List<Interval>): List<HrBand> {
+    var start = LEAD_IN_SECONDS
+    return intervals.map { interval ->
+        HrBand(interval.type, start.toFloat(), (start + interval.durationSeconds).toFloat())
+            .also { start += interval.durationSeconds }
+    }
+}
+
+/**
+ * Bands from when each interval really ran. Recording began at the get-ready,
+ * which is [LEAD_IN_SECONDS] before the first interval.
+ */
+fun timedBands(spans: List<IntervalSpan>, intervals: List<Interval>): List<HrBand> {
+    val recordingStart = (spans.minOfOrNull { it.startMillis } ?: return emptyList()) -
+        TimerUiState.LEAD_IN_MILLIS
+    return spans.mapNotNull { span ->
+        val type = intervals.getOrNull(span.index)?.type ?: return@mapNotNull null
+        HrBand(
+            type,
+            (span.startMillis - recordingStart) / 1000f,
+            (span.endMillis - recordingStart) / 1000f,
+        )
     }
 }

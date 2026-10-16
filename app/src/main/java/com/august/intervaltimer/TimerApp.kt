@@ -7,9 +7,11 @@ import com.august.intervaltimer.data.AppSettingsRepository
 import com.august.intervaltimer.data.ResultsRepository
 import com.august.intervaltimer.data.TemplateSyncPublisher
 import com.august.intervaltimer.data.TemplatesRepository
+import com.august.intervaltimer.data.WatchDevice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -39,15 +41,23 @@ class TimerApp : Application() {
     // Lives as long as the app process; used for work no single screen owns.
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    private val templatePublisher by lazy { TemplateSyncPublisher(this) }
+
+    /** What the Devices card and the NO WATCH help show about the watch. */
+    val watchDevice: WatchDevice by lazy {
+        WatchDevice(this, applicationScope) {
+            templatePublisher.publish(templatesRepository.observeTemplates().first())
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Whenever the templates change (and once at startup), push the
         // latest list to the watch. runCatching: sync must never crash the
         // app if Play Services is unavailable.
-        val publisher = TemplateSyncPublisher(this)
         applicationScope.launch {
             templatesRepository.observeTemplates().collect { templates ->
-                runCatching { publisher.publish(templates) }
+                runCatching { templatePublisher.publish(templates) }
             }
         }
     }

@@ -2,6 +2,8 @@ package com.august.intervaltimer.sync
 
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.timer.IntervalSpan
+import com.august.intervaltimer.timer.PauseSpan
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -116,6 +118,10 @@ data class SyncedTemplate(
 @Serializable
 data class SyncedTemplateList(
     val templates: List<SyncedTemplate>,
+    // When the phone sent this. The Data Layer ignores a put that changes
+    // nothing, so a new time is what makes SYNC NOW reach the watch even when
+    // the templates are the same. 0 on lists from older phones.
+    val publishedAtEpochMillis: Long = 0,
 )
 
 object TemplateSyncCodec {
@@ -160,6 +166,10 @@ data class WorkoutResult(
     // Set when the workout ran with the live link, so the phone can tell this
     // result apart from the copy it saved itself. Null for unlinked workouts.
     val linkId: String? = null,
+    // When each interval really ran, and when the workout was paused, in epoch
+    // milliseconds. Empty on results saved by older versions.
+    val spans: List<IntervalSpan> = emptyList(),
+    val pauses: List<PauseSpan> = emptyList(),
 )
 
 object HrSeriesCodec {

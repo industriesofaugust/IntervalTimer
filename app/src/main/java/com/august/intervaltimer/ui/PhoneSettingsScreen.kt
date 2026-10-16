@@ -1,7 +1,6 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -17,11 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -42,13 +39,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
-import com.august.intervaltimer.data.HealthConnectWriter
 import com.august.intervaltimer.data.ThemeMode
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WhenWatchJoins
@@ -61,6 +56,8 @@ import com.august.intervaltimer.sync.WatchCueSettings
 import com.august.intervaltimer.sync.WatchCueSettingsCodec
 import com.august.intervaltimer.timer.SoundPlayer
 import com.august.intervaltimer.timer.TimerCue
+import com.august.intervaltimer.ui.settings.DevicesCard
+import com.august.intervaltimer.ui.settings.HealthCard
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.PageTitle
 import com.august.intervaltimer.ui.theme.SectionHeader
@@ -78,37 +75,16 @@ import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).settingsRepository
-    private val resultsRepository = (app as TimerApp).resultsRepository
-    private val healthConnect = HealthConnectWriter(app)
     private val haptics = HapticsPlayer(app)
     private var testJob: Job? = null
 
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
-
-    val healthConnectAvailable = healthConnect.isAvailable()
-    val healthConnectPermissions = healthConnect.permissions
-    var healthConnectLinked by mutableStateOf(false)
-        private set
-
-    init {
-        viewModelScope.launch { healthConnectLinked = healthConnect.hasAllPermissions() }
-    }
-
-    /** After the user grants access, copy the existing history over too. */
-    fun backfillHealthConnect() {
-        viewModelScope.launch {
-            healthConnectLinked = healthConnect.hasAllPermissions()
-            if (!healthConnectLinked) return@launch
-            resultsRepository.observeAll().first().forEach { healthConnect.write(it) }
-        }
-    }
 
     fun setSoundEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setSoundEnabled(enabled) }
@@ -281,12 +257,6 @@ fun PhoneSettingsScreen(
 ) {
     val settings by viewModel.settings.collectAsState()
 
-    val healthConnectLauncher = rememberLauncherForActivityResult(
-        PermissionController.createRequestPermissionResultContract()
-    ) {
-        viewModel.backfillHealthConnect()
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -331,66 +301,11 @@ fun PhoneSettingsScreen(
         )
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader("Watch cues")
-        Spacer(Modifier.height(8.dp))
-        SettingsCard {
-            Text(
-                text = "Watch link".labelCase(),
-                style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(8.dp))
-            SegmentedChoice(
-                options = listOf("Auto" to null, "Manual" to null, "Off" to null),
-                selectedIndex = settings.watchLink.ordinal,
-                onSelect = { index -> viewModel.setWatchLink(WatchLinkMode.entries[index]) },
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = when (settings.watchLink) {
-                    WatchLinkMode.AUTO -> "The watch joins every workout you start"
-                    WatchLinkMode.MANUAL -> "Workouts start alone; tap Link watch to join"
-                    WatchLinkMode.OFF -> "Workouts never link to the watch"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(16.dp))
-            if (!watchCues.loaded) {
-                Text(
-                    text = "Open Interval Timer on your watch once to load its settings here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                ToggleRow(
-                    title = "Vibration",
-                    checked = watchCues.cues.vibrationEnabled,
-                    onCheckedChange = { on -> watchCues.update { it.copy(vibrationEnabled = on) } },
-                )
-                if (watchCues.cues.vibrationEnabled) {
-                    LevelBar(
-                        level = watchCues.cues.vibrationLevel,
-                        color = typeColor(IntervalType.WORK),
-                        onLevelChange = { level -> watchCues.update { it.copy(vibrationLevel = level) } },
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                ToggleRow(
-                    title = "Sound",
-                    checked = watchCues.cues.soundEnabled,
-                    onCheckedChange = { on -> watchCues.update { it.copy(soundEnabled = on) } },
-                )
-                if (watchCues.cues.soundEnabled) {
-                    LevelBar(
-                        level = watchCues.cues.soundLevel,
-                        color = typeColor(IntervalType.REST),
-                        onLevelChange = { level -> watchCues.update { it.copy(soundLevel = level) } },
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            TestButton("Test on watch", onClick = watchCues::testOnWatch)
-        }
+        DevicesCard(
+            watchLink = settings.watchLink,
+            onWatchLinkChange = viewModel::setWatchLink,
+            watchCues = watchCues,
+        )
 
         Spacer(Modifier.height(24.dp))
         SectionHeader("Phone cues")
@@ -451,37 +366,7 @@ fun PhoneSettingsScreen(
             TestButton("Test cues", onClick = viewModel::testCues)
         }
 
-        if (viewModel.healthConnectAvailable) {
-            Spacer(Modifier.height(24.dp))
-            SectionHeader("Health Connect")
-            Spacer(Modifier.height(8.dp))
-            SettingsCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = (if (viewModel.healthConnectLinked) "Linked" else "Not linked").labelCase(),
-                            style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
-                            color = if (viewModel.healthConnectLinked) typeColor(IntervalType.REST)
-                            else MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "Save workouts where other fitness apps can see them",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (!viewModel.healthConnectLinked) {
-                        Spacer(Modifier.width(12.dp))
-                        Button(onClick = {
-                            healthConnectLauncher.launch(viewModel.healthConnectPermissions)
-                        }) {
-                            Text("Link".labelCase())
-                        }
-                    }
-                }
-            }
-        }
+        HealthCard()
 
         Spacer(Modifier.height(24.dp))
         SectionHeader("Theme")
@@ -508,7 +393,7 @@ fun PhoneSettingsScreen(
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+internal fun SettingsCard(content: @Composable () -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -521,7 +406,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun ToggleRow(
+internal fun ToggleRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
@@ -537,7 +422,7 @@ private fun ToggleRow(
 }
 
 @Composable
-private fun TestButton(label: String, onClick: () -> Unit) {
+internal fun TestButton(label: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -552,7 +437,7 @@ private fun TestButton(label: String, onClick: () -> Unit) {
 
 /** Five tappable steps, filled up to the current level. Matches the bar on the watch. */
 @Composable
-private fun LevelBar(level: Int, color: Color, onLevelChange: (Int) -> Unit) {
+internal fun LevelBar(level: Int, color: Color, onLevelChange: (Int) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (step in 1..5) {
             Box(
@@ -575,7 +460,7 @@ private fun LevelBar(level: Int, color: Color, onLevelChange: (Int) -> Unit) {
 
 /** A row of choices where one is selected, like a tab strip. */
 @Composable
-private fun SegmentedChoice(
+internal fun SegmentedChoice(
     options: List<Pair<String, String?>>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,

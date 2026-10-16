@@ -32,6 +32,10 @@ data class TimerUiState(
     val endedEarly: Boolean = false,
     val completedIntervals: Int = 0,
     val elapsedSecondsAtEnd: Int = 0,
+    /** Every interval that has finished running, with when it really started and ended. */
+    val spans: List<IntervalSpan> = emptyList(),
+    /** Every stretch the user had the workout paused. */
+    val pauses: List<PauseSpan> = emptyList(),
 ) {
     val currentInterval: Interval? get() = intervals.getOrNull(currentIndex)
 
@@ -76,11 +80,13 @@ data class TimerUiState(
 /**
  * The countdown itself. It only needs a coroutine scope to run in, so the
  * phone can host it in a ViewModel and the watch in a foreground service.
- * The clock is a parameter so tests can control time.
+ * The clocks are parameters so tests can control time: [clock] drives the
+ * countdown, [wallClock] (epoch millis) stamps when each interval really ran.
  */
 class TimerEngine(
     private val scope: CoroutineScope,
     private val clock: () -> Long = SystemClock::elapsedRealtime,
+    private val wallClock: () -> Long = System::currentTimeMillis,
 ) {
 
     /**
@@ -98,6 +104,11 @@ class TimerEngine(
 
     private var ticker: Job? = null
 
+    // When the interval now running began, and when the current pause began.
+    // Null when there is no such thing; the finished ones live in the state.
+    private var intervalStartedAt: Long? = null
+    private var pauseStartedAt: Long? = null
+
     /**
      * [elapsedMillis] starts the session that far in, so a second device can
      * join a session that began a moment ago. No cue is played for the
@@ -105,7 +116,13 @@ class TimerEngine(
      */
     fun start(intervals: List<Interval>, elapsedMillis: Long = 0L) {
         if (intervals.isEmpty()) return
-        _uiState.value = stateAfter(intervals, elapsedMillis)
+        val state = stateAfter(intervals, elapsedMillis)
+        pauseStartedAt = null
+        intervalStartedAt =
+            if (state.phase == TimerPhase.RUNNING) {
+                wallClock() - (state.currentDurationMillis - state.remainingMillis)
+            } else null
+        _uiState.value = state
         startTicker()
     }
 
@@ -119,34 +136,42 @@ class TimerEngine(
     fun syncTo(index: Int, remainingMillis: Long, paused: Boolean) {
         val state = _uiState.value
         if (state.intervals.isEmpty() || state.phase == TimerPhase.FINISHED) return
+        val now = wallClock()
         if (index >= state.intervals.size) {
-            finish(state)
+            finish(state, now)
             return
         }
         if (index < 0) {
-            _uiState.value = state.copy(
+            _uiState.value = closeInterval(state, now).copy(
                 phase = TimerPhase.LEAD_IN,
                 currentIndex = 0,
                 remainingMillis = remainingMillis.coerceIn(0L, TimerUiState.LEAD_IN_MILLIS),
-                isPaused = paused,
-            )
+            ).withPaused(paused, now)
             return
         }
         val interval = state.intervals[index]
         val movedToNewInterval = state.phase != TimerPhase.RUNNING || state.currentIndex != index
-        if (movedToNewInterval) _cues.tryEmit(startCue(interval))
-        _uiState.value = state.copy(
+        val remaining = remainingMillis.coerceIn(0L, interval.durationSeconds * 1000L)
+        var next = state
+        if (movedToNewInterval) {
+            _cues.tryEmit(startCue(interval))
+            // The other device says how far in it is, so that is when this one began.
+            val startedAt = now - (interval.durationSeconds * 1000L - remaining)
+            val previousStart = intervalStartedAt ?: startedAt
+            next = closeInterval(state, maxOf(startedAt, previousStart))
+            intervalStartedAt = maxOf(startedAt, previousStart)
+        }
+        _uiState.value = next.copy(
             phase = TimerPhase.RUNNING,
             currentIndex = index,
-            remainingMillis = remainingMillis.coerceIn(0L, interval.durationSeconds * 1000L),
-            isPaused = paused,
-        )
+            remainingMillis = remaining,
+        ).withPaused(paused, now)
     }
 
     fun togglePause() {
         val state = _uiState.value
         if (state.phase == TimerPhase.FINISHED) return
-        _uiState.value = state.copy(isPaused = !state.isPaused)
+        _uiState.value = state.withPaused(!state.isPaused, wallClock())
     }
 
     fun skip() {
@@ -157,6 +182,8 @@ class TimerEngine(
 
     fun stop() {
         ticker?.cancel()
+        intervalStartedAt = null
+        pauseStartedAt = null
         _uiState.value = TimerUiState()
     }
 
@@ -168,7 +195,7 @@ class TimerEngine(
         val completed = if (state.phase == TimerPhase.RUNNING) state.currentIndex else 0
         val elapsedSeconds = (state.elapsedMillis / 1000).toInt()
         _cues.tryEmit(TimerCue.FINISH)
-        _uiState.value = state.copy(
+        _uiState.value = closeAll(state, wallClock()).copy(
             phase = TimerPhase.FINISHED,
             remainingMillis = 0L,
             isPaused = false,
@@ -218,22 +245,55 @@ class TimerEngine(
         val state = _uiState.value
         val nextIndex = if (state.phase == TimerPhase.LEAD_IN) 0 else state.currentIndex + 1
         val next = state.intervals.getOrNull(nextIndex)
+        // The old interval really ended at the moment its time ran out.
+        val boundary = wallClock() + carryMillis
         if (next == null) {
-            finish(state)
+            finish(state, boundary)
             return
         }
         _cues.tryEmit(startCue(next))
-        _uiState.value = state.copy(
+        val closed = closeInterval(state, boundary)
+        intervalStartedAt = boundary
+        _uiState.value = closed.copy(
             phase = TimerPhase.RUNNING,
             currentIndex = nextIndex,
             remainingMillis = next.durationSeconds * 1000L + carryMillis,
         )
     }
 
-    /** The session ran to its end. */
-    private fun finish(state: TimerUiState) {
+    /** Records the interval that was running as finished at [endMillis]. */
+    private fun closeInterval(state: TimerUiState, endMillis: Long): TimerUiState {
+        val startedAt = intervalStartedAt
+        intervalStartedAt = null
+        if (state.phase != TimerPhase.RUNNING || startedAt == null || endMillis <= startedAt) {
+            return state
+        }
+        return state.copy(spans = state.spans + IntervalSpan(state.currentIndex, startedAt, endMillis))
+    }
+
+    /** Closes the running interval and any pause that is still open. */
+    private fun closeAll(state: TimerUiState, endMillis: Long): TimerUiState {
+        val closed = closeInterval(state, endMillis)
+        return if (closed.isPaused) closed.withPaused(false, endMillis) else closed
+    }
+
+    /** Starts or ends a pause at [now], keeping the finished ones in the state. */
+    private fun TimerUiState.withPaused(paused: Boolean, now: Long): TimerUiState {
+        if (paused == isPaused) return this
+        if (paused) {
+            pauseStartedAt = now
+            return copy(isPaused = true)
+        }
+        val startedAt = pauseStartedAt
+        pauseStartedAt = null
+        val finished = if (startedAt != null && now > startedAt) pauses + PauseSpan(startedAt, now) else pauses
+        return copy(isPaused = false, pauses = finished)
+    }
+
+    /** The session ran to its end, at [endMillis] on the wall clock. */
+    private fun finish(state: TimerUiState, endMillis: Long) {
         _cues.tryEmit(TimerCue.FINISH)
-        _uiState.value = state.copy(
+        _uiState.value = closeAll(state, endMillis).copy(
             phase = TimerPhase.FINISHED,
             remainingMillis = 0L,
             isPaused = false,

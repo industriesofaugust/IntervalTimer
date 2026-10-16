@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.timer.WorkoutTiming
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -83,6 +84,7 @@ class DatabaseMigrationTest {
             db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `intervalsJson` TEXT")
             db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `completedIntervals` INTEGER")
         }
+        if (version >= 6) db.execSQL("ALTER TABLE `workout_results` ADD COLUMN `linkId` TEXT")
         fill(db)
         db.version = version
         db.close()
@@ -166,6 +168,27 @@ class DatabaseMigrationTest {
             assertEquals("Tabata", result.templateName)
             assertEquals(140.5, result.avgHeartRate!!, 0.001)
             assertNull(result.linkId)
+        }
+        database.close()
+    }
+
+    @Test
+    fun `a version 6 database upgrades and keeps its results without timing`() {
+        createOldDatabase(version = 6) { db ->
+            db.execSQL(
+                "INSERT INTO workout_results (completedAt, templateName, totalSeconds, " +
+                    "workSeconds, workIntervals, avgHeartRate, maxHeartRate, steps, calories, linkId) " +
+                    "VALUES (9000, 'Tabata', 230, 160, 8, 140.5, 171.0, 300, 47.5, 'link-1')"
+            )
+        }
+
+        val database = openCurrent()
+        runBlocking {
+            val result = database.resultDao().observeAll().first().single()
+            assertEquals("Tabata", result.templateName)
+            assertEquals("link-1", result.linkId)
+            assertNull(result.timingJson)
+            assertEquals(WorkoutTiming(), result.timing())
         }
         database.close()
     }

@@ -1,7 +1,9 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,17 +32,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.data.HealthConnectWriter
+import com.august.intervaltimer.data.HealthPrefsRepository
 import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.data.hrSeries
 import com.august.intervaltimer.data.intervals
+import com.august.intervaltimer.data.timing
+import com.august.intervaltimer.health.HeartRateZones
+import com.august.intervaltimer.health.timeInZones
+import com.august.intervaltimer.health.maxHeartRateFor
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.timer.TimerUiState
 import com.august.intervaltimer.ui.components.SessionStrip
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.SectionHeader
@@ -49,22 +60,50 @@ import com.august.intervaltimer.ui.theme.figureStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.ui.theme.typeColor
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 class WorkoutDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).resultsRepository
     private val resultId: Long = handle.get<Long>("resultId") ?: 0L
 
+    private val healthConnect = HealthConnectWriter(app)
+    private val healthPrefs = HealthPrefsRepository(app)
+
     var result by mutableStateOf<WorkoutResultEntity?>(null)
         private set
 
+    /** Null when there is no maximum to work from, or no heart rate to place in zones. */
+    var zones by mutableStateOf<HeartRateZones?>(null)
+        private set
+
+    /** Where the zones come from, in words: "MAX 190 FROM AGE · RESTING 58". */
+    var zoneSource by mutableStateOf("")
+        private set
+
     init {
-        viewModelScope.launch { result = repository.getById(resultId) }
+        viewModelScope.launch {
+            result = repository.getById(resultId)
+            loadZones()
+        }
     }
 
+    private suspend fun loadZones() {
+        val age = healthPrefs.age.first()
+        val highest = repository.highestHeartRate()
+        val max = maxHeartRateFor(age, highest)
+        val resting = healthConnect.latestRestingHeartRate()
+        zones = HeartRateZones.create(max, resting)
+        zoneSource = zones?.let { zoneSourceText(it, fromAge = maxHeartRateFor(age, null) != null) } ?: ""
+    }
+
+    /** Deletes the workout here and its records in Health Connect. */
     fun delete(onDeleted: () -> Unit) {
+        val deleted = result
         viewModelScope.launch {
             repository.deleteById(resultId)
+            if (deleted != null) healthConnect.delete(deleted)
             onDeleted()
         }
     }
@@ -148,14 +187,32 @@ fun WorkoutDetailScreen(
             SectionHeader("Heart rate")
             Spacer(Modifier.height(12.dp))
             if (series.size >= 2) {
+                val timing = result.timing()
+                // The real timing when it was recorded; the plan for older workouts.
+                val bands = if (timing.spans.isNotEmpty()) timedBands(timing.spans, intervals)
+                else plannedBands(intervals)
+                val leadIn = (TimerUiState.LEAD_IN_MILLIS / 1000).toInt()
+                val endSeconds = if (timing.spans.isNotEmpty()) {
+                    ceil(bands.maxOfOrNull { it.endSeconds } ?: 0f).toInt()
+                } else {
+                    leadIn + result.totalSeconds
+                }
                 HrChart(
                     series = series,
-                    intervals = intervals,
-                    totalSeconds = result.totalSeconds,
+                    bands = bands,
+                    endSeconds = endSeconds,
+                    zones = viewModel.zones,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(190.dp),
                 )
+                viewModel.zones?.let { zones ->
+                    Spacer(Modifier.height(20.dp))
+                    ZoneBars(
+                        seconds = timeInZones(series, zones),
+                        source = viewModel.zoneSource,
+                    )
+                }
             } else {
                 Text(
                     text = "No heart rate was recorded for this workout.",
@@ -219,4 +276,63 @@ private fun DetailTile(label: String, value: String, modifier: Modifier = Modifi
             Text(text = value, style = figureStyle(), maxLines = 1)
         }
     }
+}
+
+private fun zoneSourceText(zones: HeartRateZones, fromAge: Boolean): String {
+    val max = "Max ${zones.maxHeartRate} " + if (fromAge) "from age" else "highest seen"
+    val base = zones.restingHeartRate?.let { "resting $it" } ?: "% of max"
+    return "$max · $base"
+}
+
+/** Time in each heart-rate zone: five small bars, each with its minutes. */
+@Composable
+private fun ZoneBars(seconds: List<Int>, source: String) {
+    val longest = (seconds.maxOrNull() ?: 0).coerceAtLeast(1)
+    val low = typeColor(IntervalType.REST)
+    val high = typeColor(IntervalType.WORK)
+    SectionHeader("Time in zones")
+    Spacer(Modifier.height(10.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        seconds.forEachIndexed { index, zoneSeconds ->
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = formatDuration(zoneSeconds),
+                    style = captionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(4.dp))
+                // A fixed-height slot, with the bar growing up from its bottom.
+                Box(modifier = Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.BottomCenter) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height((4 + 44 * zoneSeconds / longest.toFloat()).dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(
+                                lerp(low, high, index / 4f).copy(alpha = if (zoneSeconds == 0) 0.25f else 1f)
+                            ),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Z${index + 1}",
+                    style = captionStyle(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = source.labelCase(),
+        style = captionStyle(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

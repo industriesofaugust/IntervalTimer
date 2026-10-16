@@ -26,8 +26,14 @@ class TimerEngineTest {
     private val rest2 = Interval("Rest", IntervalType.REST, 2)
     private val work4 = Interval("Squats", IntervalType.WORK, 4)
 
-    private fun TestScope.newEngine() =
-        TimerEngine(scope = backgroundScope, clock = { testScheduler.currentTime })
+    // The wall clock starts at a fixed moment and moves with the fake time.
+    private val wallStart = 1_700_000_000_000L
+
+    private fun TestScope.newEngine() = TimerEngine(
+        scope = backgroundScope,
+        clock = { testScheduler.currentTime },
+        wallClock = { wallStart + testScheduler.currentTime },
+    )
 
     private fun TestScope.recordCues(engine: TimerEngine): List<TimerCue> {
         val cues = mutableListOf<TimerCue>()
@@ -350,5 +356,138 @@ class TimerEngineTest {
         )
         assertTrue(engine.uiState.value.endedEarly)
         assertEquals(1, engine.uiState.value.completedIntervals)
+    }
+
+    @Test
+    fun `an uninterrupted workout records each interval back to back`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+
+        advanceTimeBy(10_100)
+
+        val state = engine.uiState.value
+        assertEquals(
+            listOf(
+                IntervalSpan(0, wallStart + 5_000, wallStart + 8_000),
+                IntervalSpan(1, wallStart + 8_000, wallStart + 10_000),
+            ),
+            state.spans,
+        )
+        assertTrue(state.pauses.isEmpty())
+    }
+
+    @Test
+    fun `a pause is recorded and the interval carries on after it`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+        advanceTimeBy(6_000)
+
+        engine.togglePause()
+        advanceTimeBy(30_000)
+        engine.togglePause()
+        advanceTimeBy(2_100)
+
+        val state = engine.uiState.value
+        assertEquals(listOf(PauseSpan(wallStart + 6_000, wallStart + 36_000)), state.pauses)
+        // The work interval is one span that lasted through the pause.
+        assertEquals(IntervalSpan(0, wallStart + 5_000, wallStart + 38_000), state.spans.single())
+        assertEquals(rest2, state.currentInterval)
+    }
+
+    @Test
+    fun `a skipped interval ends at the moment it was skipped`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+        engine.skip()
+        advanceTimeBy(1_000)
+
+        engine.skip()
+
+        assertEquals(listOf(IntervalSpan(0, wallStart, wallStart + 1_000)), engine.uiState.value.spans)
+        assertEquals(rest2, engine.uiState.value.currentInterval)
+
+        advanceTimeBy(500)
+        engine.skip()
+
+        // Skipping the last interval finishes the workout, and it ends there too.
+        val state = engine.uiState.value
+        assertEquals(TimerPhase.FINISHED, state.phase)
+        assertEquals(IntervalSpan(1, wallStart + 1_000, wallStart + 1_500), state.spans.last())
+    }
+
+    @Test
+    fun `ending early stops the interval that was running`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2, work4))
+        advanceTimeBy(5_000 + 3_000 + 2_000 + 1_050)
+
+        engine.endEarly()
+
+        assertEquals(
+            listOf(
+                IntervalSpan(0, wallStart + 5_000, wallStart + 8_000),
+                IntervalSpan(1, wallStart + 8_000, wallStart + 10_000),
+                IntervalSpan(2, wallStart + 10_000, wallStart + 11_050),
+            ),
+            engine.uiState.value.spans,
+        )
+    }
+
+    @Test
+    fun `ending during the lead in records no interval`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3))
+        advanceTimeBy(2_000)
+
+        engine.endEarly()
+
+        assertTrue(engine.uiState.value.spans.isEmpty())
+    }
+
+    @Test
+    fun `ending while paused closes the pause too`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2))
+        advanceTimeBy(6_000)
+        engine.togglePause()
+        advanceTimeBy(2_000)
+
+        engine.endEarly()
+
+        val state = engine.uiState.value
+        assertEquals(listOf(PauseSpan(wallStart + 6_000, wallStart + 8_000)), state.pauses)
+        assertEquals(listOf(IntervalSpan(0, wallStart + 5_000, wallStart + 8_000)), state.spans)
+    }
+
+    @Test
+    fun `joining part way in counts the interval from when it really began`() = runTest {
+        val engine = newEngine()
+        // One second into the first interval.
+        engine.start(listOf(work3, rest2), elapsedMillis = 5_000 + 1_000)
+
+        advanceTimeBy(2_100)
+
+        assertEquals(
+            IntervalSpan(0, wallStart - 1_000, wallStart + 2_000),
+            engine.uiState.value.spans.first(),
+        )
+    }
+
+    @Test
+    fun `following the other device closes the interval it moves on from`() = runTest {
+        val engine = newEngine()
+        engine.start(listOf(work3, rest2, work4))
+        advanceTimeBy(6_050)
+
+        // The other device is already half a second into the rest.
+        engine.syncTo(index = 1, remainingMillis = 1_500, paused = false)
+        advanceTimeBy(1_000)
+        engine.syncTo(index = 1, remainingMillis = 500, paused = true)
+        advanceTimeBy(1_000)
+        engine.syncTo(index = 1, remainingMillis = 500, paused = false)
+
+        val state = engine.uiState.value
+        assertEquals(IntervalSpan(0, wallStart + 5_000, wallStart + 5_550), state.spans.single())
+        assertEquals(listOf(PauseSpan(wallStart + 7_050, wallStart + 8_050)), state.pauses)
     }
 }

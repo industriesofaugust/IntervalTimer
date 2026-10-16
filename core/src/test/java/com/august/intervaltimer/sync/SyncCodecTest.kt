@@ -1,6 +1,8 @@
 package com.august.intervaltimer.sync
 
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.timer.IntervalSpan
+import com.august.intervaltimer.timer.PauseSpan
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -60,6 +62,30 @@ class SyncCodecTest {
         )
 
         assertEquals(result, ResultSyncCodec.decode(ResultSyncCodec.encode(result)))
+    }
+
+    @Test
+    fun `interval timing survives the trip to the phone`() {
+        val result = WorkoutResult(
+            completedAt = 1_760_000_000_000,
+            totalSeconds = 60,
+            workSeconds = 40,
+            workIntervals = 2,
+            spans = listOf(IntervalSpan(0, 1_000, 41_000)),
+            pauses = listOf(PauseSpan(10_000, 12_000)),
+        )
+
+        assertEquals(result, ResultSyncCodec.decode(ResultSyncCodec.encode(result)))
+    }
+
+    @Test
+    fun `a result from an older watch has no interval timing`() {
+        val json = """{"completedAt":5,"totalSeconds":60,"workSeconds":40,"workIntervals":2}"""
+
+        val result = ResultSyncCodec.decode(json)
+
+        assertEquals(emptyList<IntervalSpan>(), result.spans)
+        assertEquals(emptyList<PauseSpan>(), result.pauses)
     }
 
     @Test

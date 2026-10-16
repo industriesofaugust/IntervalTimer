@@ -97,9 +97,8 @@ class ResultListenerService : WearableListenerService() {
         val result = ResultSyncCodec.decode(json)
         runBlocking {
             val entity = app.resultsRepository.insertFromWatch(result)
-            // Forward to Health Connect if the user linked it.
-            val writer = HealthConnectWriter(applicationContext)
-            if (writer.hasAllPermissions()) writer.write(entity)
+            // Forward to Health Connect if the user linked it. The watch's result replaces the phone's copy there too.
+            HealthConnectWriter(applicationContext).saveIfLinked(entity, fromWatch = true)
         }
     }
 

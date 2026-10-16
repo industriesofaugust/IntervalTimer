@@ -5,6 +5,8 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.timer.IntervalSpan
+import com.august.intervaltimer.timer.PauseSpan
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -94,5 +96,49 @@ class ResultsRepositoryTest {
         repository.insertFromPhone(result(2_000, null))
 
         assertEquals(2, saved().size)
+    }
+
+    @Test
+    fun `a saved result comes back with its row id`() = runBlocking {
+        val first = repository.insert(result(1_000, null))
+        val second = repository.insertFromWatch(result(2_000, "link-1"))
+        val third = repository.insertFromPhone(result(3_000, "link-2"))!!
+
+        val ids = saved().associate { it.completedAt to it.id }
+        assertEquals(ids[1_000L], first.id)
+        assertEquals(ids[2_000L], second.id)
+        assertEquals(ids[3_000L], third.id)
+        assertEquals(3, ids.values.toSet().size)
+    }
+
+    @Test
+    fun `interval timing is stored with the result`() = runBlocking {
+        val timed = result(1_000, null).copy(
+            spans = listOf(IntervalSpan(0, 100, 5_100)),
+            pauses = listOf(PauseSpan(2_000, 3_000)),
+        )
+
+        repository.insert(timed)
+
+        val timing = saved().single().timing()
+        assertEquals(timed.spans, timing.spans)
+        assertEquals(timed.pauses, timing.pauses)
+    }
+
+    @Test
+    fun `a result without timing stores none`() = runBlocking {
+        repository.insert(result(1_000, null))
+
+        assertNull(saved().single().timingJson)
+    }
+
+    @Test
+    fun `the highest heart rate is the best across all workouts`() = runBlocking {
+        assertNull(repository.highestHeartRate())
+        repository.insert(result(1_000, null).copy(maxHeartRate = 171.0))
+        repository.insert(result(2_000, null).copy(maxHeartRate = 183.0))
+        repository.insert(result(3_000, null))
+
+        assertEquals(183.0, repository.highestHeartRate()!!, 0.001)
     }
 }

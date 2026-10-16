@@ -32,8 +32,9 @@ suspend fun TimerApp.recordPhoneWorkout(
             intervals = finished.intervals.toSyncedIntervals(),
             completedIntervals = finished.completedIntervals,
             linkId = linkId,
+            spans = finished.spans,
+            pauses = finished.pauses,
         )
     ) ?: return // The watch's result is already saved.
-    val healthConnect = HealthConnectWriter(this)
-    if (healthConnect.hasAllPermissions()) healthConnect.write(entity)
+    HealthConnectWriter(this).saveIfLinked(entity, fromWatch = false)
 }

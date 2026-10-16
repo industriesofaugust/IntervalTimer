@@ -69,4 +69,7 @@ data class WorkoutResultEntity(
     // Ties the phone's own copy to the watch's copy of the same linked
     // workout. Null before version 6, and for workouts that were not linked.
     val linkId: String? = null,
+    // When each interval really ran and when the workout was paused (JSON).
+    // Null on results saved before version 7.
+    val timingJson: String? = null,
 )

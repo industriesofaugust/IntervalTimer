@@ -409,6 +409,8 @@ object WorkoutSession {
             intervals = finished.intervals.toSyncedIntervals(),
             completedIntervals = finished.completedIntervals,
             linkId = linkId,
+            spans = finished.spans,
+            pauses = finished.pauses,
         )
         // Data items persist, so the result reaches the phone even if it
         // isn't nearby right now.

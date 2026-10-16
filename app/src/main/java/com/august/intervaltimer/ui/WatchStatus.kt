@@ -1,11 +1,13 @@
 package com.august.intervaltimer.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -13,17 +15,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Watch
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,24 +35,25 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.data.WatchConnection
+import com.august.intervaltimer.data.WatchDeviceState
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.model.IntervalType
-import com.august.intervaltimer.sync.LivePaths
+import com.august.intervaltimer.ui.settings.TroubleshootingSteps
+import com.august.intervaltimer.ui.settings.connectionLabel
 import com.august.intervaltimer.ui.theme.DialType
+import com.august.intervaltimer.ui.theme.SectionHeader
 import com.august.intervaltimer.ui.theme.captionStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.ui.theme.typeColor
-import com.google.android.gms.wearable.CapabilityClient
-import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 /**
  * "WATCH READY" or "NO WATCH" with a small dot, for the screens where a
- * workout is started. Hidden when the watch link is off.
+ * workout is started. Hidden when the watch link is off. Tapping NO WATCH
+ * opens the steps for fixing it.
  */
 @Composable
 fun WatchReadyStatus(modifier: Modifier = Modifier) {
@@ -62,9 +65,17 @@ fun WatchReadyStatus(modifier: Modifier = Modifier) {
 
 @Composable
 private fun WatchReadyRow(modifier: Modifier) {
-    val ready = rememberWatchReady()
+    val watch = rememberWatchDevice()
+    val ready = watch.connection == WatchConnection.CONNECTED
+    var showHelp by remember { mutableStateOf(false) }
     val color = if (ready) typeColor(IntervalType.REST) else MaterialTheme.colorScheme.outline
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = !ready) { showHelp = true }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Box(
             Modifier
                 .size(8.dp)
@@ -79,44 +90,37 @@ private fun WatchReadyRow(modifier: Modifier) {
             else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+    // Closes by itself if the watch connects while it is open.
+    if (showHelp && !ready) WatchHelpSheet(watch.connection, onDismiss = { showHelp = false })
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WatchHelpSheet(connection: WatchConnection, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+            SectionHeader(connectionLabel(connection))
+            Spacer(Modifier.height(12.dp))
+            TroubleshootingSteps(connection)
+        }
+    }
 }
 
 /**
- * True while a connected watch has our app. The watch declares a capability
- * for this; it is checked now, whenever the screen comes back, and whenever
- * the capability changes.
+ * What the phone knows about the watch. Checked now, whenever the screen
+ * comes back, and (inside [com.august.intervaltimer.data.WatchDevice])
+ * whenever Play services reports a change.
  */
 @Composable
-private fun rememberWatchReady(): Boolean {
-    val context = LocalContext.current.applicationContext
-    val scope = rememberCoroutineScope()
-    var ready by remember { mutableStateOf(false) }
-
-    fun refresh() {
-        scope.launch {
-            ready = runCatching {
-                Wearable.getCapabilityClient(context)
-                    .getCapability(LivePaths.WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
-                    .await()
-                    .nodes
-                    .isNotEmpty()
-            }.getOrDefault(false)
-        }
-    }
-
-    // The change event only says who has the capability, not who can be
-    // reached right now, so it just triggers the same check again.
-    DisposableEffect(context) {
-        val client = Wearable.getCapabilityClient(context)
-        val listener = CapabilityClient.OnCapabilityChangedListener { refresh() }
-        runCatching { client.addListener(listener, LivePaths.WATCH_CAPABILITY) }
-        onDispose { runCatching { client.removeListener(listener) } }
-    }
-    LifecycleResumeEffect(Unit) {
-        refresh()
+fun rememberWatchDevice(): WatchDeviceState {
+    val app = LocalContext.current.applicationContext as TimerApp
+    val device = app.watchDevice
+    LifecycleResumeEffect(device) {
+        device.refresh()
         onPauseOrDispose { }
     }
-    return ready
+    val state by device.state.collectAsState()
+    return state
 }
 
 /** Shown on Home while the watch is asking the phone to follow its workout. */

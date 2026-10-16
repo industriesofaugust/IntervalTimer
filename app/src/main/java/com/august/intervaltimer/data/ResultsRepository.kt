@@ -6,6 +6,8 @@ import com.august.intervaltimer.sync.HrSeriesCodec
 import com.august.intervaltimer.sync.IntervalListCodec
 import com.august.intervaltimer.sync.toDomainIntervals
 import com.august.intervaltimer.sync.WorkoutResult
+import com.august.intervaltimer.timer.WorkoutTiming
+import com.august.intervaltimer.timer.WorkoutTimingCodec
 import kotlinx.coroutines.flow.Flow
 
 class ResultsRepository(private val dao: ResultDao) {
@@ -14,15 +16,19 @@ class ResultsRepository(private val dao: ResultDao) {
 
     fun observeAll(): Flow<List<WorkoutResultEntity>> = dao.observeAll()
 
+    suspend fun getAll(): List<WorkoutResultEntity> = dao.getAll()
+
     suspend fun getById(id: Long): WorkoutResultEntity? = dao.getById(id)
 
     suspend fun deleteById(id: Long) = dao.deleteById(id)
 
-    /** Stores the result and returns the entity, for anyone who needs it next. */
+    /** The highest heart rate in any saved workout, for working out heart-rate zones. */
+    suspend fun highestHeartRate(): Double? = dao.highestHeartRate()
+
+    /** Stores the result and returns the entity (with its id), for anyone who needs it next. */
     suspend fun insert(result: WorkoutResult): WorkoutResultEntity {
         val entity = result.toEntity()
-        dao.insert(entity)
-        return entity
+        return entity.withId(dao.insert(entity))
     }
 
     /**
@@ -33,8 +39,7 @@ class ResultsRepository(private val dao: ResultDao) {
     suspend fun insertFromWatch(result: WorkoutResult): WorkoutResultEntity {
         val linkId = result.linkId ?: return insert(result)
         val entity = result.toEntity()
-        dao.replaceByLinkId(linkId, entity)
-        return entity
+        return entity.withId(dao.replaceByLinkId(linkId, entity))
     }
 
     /**
@@ -44,8 +49,13 @@ class ResultsRepository(private val dao: ResultDao) {
     suspend fun insertFromPhone(result: WorkoutResult): WorkoutResultEntity? {
         val linkId = result.linkId ?: return insert(result)
         val entity = result.toEntity()
-        return if (dao.insertUnlessLinked(linkId, entity)) entity else null
+        val rowId = dao.insertUnlessLinked(linkId, entity) ?: return null
+        return entity.withId(rowId)
     }
+
+    // A rowId of -1 means a result with this completedAt was already saved; that one is the entity.
+    private suspend fun WorkoutResultEntity.withId(rowId: Long): WorkoutResultEntity =
+        if (rowId > 0) copy(id = rowId) else dao.getByCompletedAt(completedAt) ?: this
 }
 
 /** The workout's intervals, or empty for results saved before they were recorded. */
@@ -54,6 +64,10 @@ fun WorkoutResultEntity.intervals(): List<Interval> =
 
 fun WorkoutResultEntity.hrSeries(): List<HrSample> =
     hrSeriesJson?.let { HrSeriesCodec.decode(it) } ?: emptyList()
+
+/** When each interval really ran, or empty for results saved before version 7. */
+fun WorkoutResultEntity.timing(): WorkoutTiming =
+    timingJson?.let { WorkoutTimingCodec.decode(it) } ?: WorkoutTiming()
 
 private fun WorkoutResult.toEntity() = WorkoutResultEntity(
     completedAt = completedAt,
@@ -69,4 +83,6 @@ private fun WorkoutResult.toEntity() = WorkoutResultEntity(
     intervalsJson = intervals.takeIf { it.isNotEmpty() }?.let { IntervalListCodec.encode(it) },
     completedIntervals = completedIntervals,
     linkId = linkId,
+    timingJson = spans.takeIf { it.isNotEmpty() }
+        ?.let { WorkoutTimingCodec.encode(WorkoutTiming(it, pauses)) },
 )
