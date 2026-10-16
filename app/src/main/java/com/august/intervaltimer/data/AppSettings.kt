@@ -13,6 +13,12 @@ import kotlinx.coroutines.flow.map
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/**
+ * How phone workouts link to the watch. AUTO: the watch joins every workout.
+ * MANUAL: workouts start alone and the tag offers LINK WATCH. OFF: never.
+ */
+enum class WatchLinkMode { AUTO, MANUAL, OFF }
+
 /** What the phone's own cues do while the watch has joined the workout. */
 enum class WhenWatchJoins { QUIET, SOUND_ONLY, BOTH }
 
@@ -25,8 +31,8 @@ data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val style: AppStyle = AppStyle.DIAL,
     val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
-    /** Phone workouts also run on the watch (the live link). */
-    val useWatch: Boolean = true,
+    /** Whether phone workouts also run on the watch (the live link). */
+    val watchLink: WatchLinkMode = WatchLinkMode.AUTO,
     /** Only applies while the watch is linked; otherwise the phone cues as usual. */
     val whenWatchJoins: WhenWatchJoins = WhenWatchJoins.QUIET,
 )
@@ -43,7 +49,9 @@ class AppSettingsRepository(private val context: Context) {
         val themeMode = stringPreferencesKey("theme_mode")
         val style = stringPreferencesKey("style")
         val countdownFormat = stringPreferencesKey("countdown_format")
+        // The old on/off setting; only read when the new one has not been saved yet.
         val useWatch = booleanPreferencesKey("use_watch")
+        val watchLink = stringPreferencesKey("watch_link")
         val whenWatchJoins = stringPreferencesKey("when_watch_joins")
     }
 
@@ -62,7 +70,9 @@ class AppSettingsRepository(private val context: Context) {
             countdownFormat = prefs[Keys.countdownFormat]
                 ?.let { runCatching { CountdownFormat.valueOf(it) }.getOrNull() }
                 ?: CountdownFormat.SECONDS,
-            useWatch = prefs[Keys.useWatch] ?: true,
+            watchLink = prefs[Keys.watchLink]
+                ?.let { runCatching { WatchLinkMode.valueOf(it) }.getOrNull() }
+                ?: if (prefs[Keys.useWatch] == false) WatchLinkMode.OFF else WatchLinkMode.AUTO,
             whenWatchJoins = prefs[Keys.whenWatchJoins]
                 ?.let { runCatching { WhenWatchJoins.valueOf(it) }.getOrNull() }
                 ?: WhenWatchJoins.QUIET,
@@ -93,8 +103,11 @@ class AppSettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.countdownFormat] = format.name }
     }
 
-    suspend fun setUseWatch(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.useWatch] = enabled }
+    suspend fun setWatchLink(mode: WatchLinkMode) {
+        context.dataStore.edit {
+            it[Keys.watchLink] = mode.name
+            it.remove(Keys.useWatch)
+        }
     }
 
     suspend fun setWhenWatchJoins(choice: WhenWatchJoins) {

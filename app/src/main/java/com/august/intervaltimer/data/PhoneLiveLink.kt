@@ -9,6 +9,7 @@ import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.LivePaths
 import com.august.intervaltimer.sync.LiveRequest
 import com.august.intervaltimer.sync.LiveStart
+import com.august.intervaltimer.sync.LiveUnlink
 import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.sync.SyncedInterval
 import com.august.intervaltimer.sync.toDomainIntervals
@@ -25,8 +26,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -76,9 +80,29 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     val watchSavesResult: Boolean
         get() = _state.value == LinkState.LINKED
 
-    /** Names this workout on both devices; null when there is no link. */
+    /**
+     * Names this workout on both devices; null when there is no link. A
+     * phone-started workout keeps its id after sync is stopped, so a watch
+     * that missed the stop still ends up as the same single history entry.
+     */
     val currentLinkId: String?
         get() = linkId
+
+    /**
+     * True when the workout started on the watch and the phone follows it.
+     * Then the watch keeps and saves the workout, and the phone steps out
+     * when sync stops.
+     */
+    var followingWatch = false
+        private set
+
+    private val _stepOut = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /**
+     * Emits when the phone has to drop a workout it was following. The timer
+     * screen answers by stopping the timer without saving and closing.
+     */
+    val stepOut: SharedFlow<Unit> = _stepOut.asSharedFlow()
 
     private val _metrics = MutableStateFlow<LiveMetricsUpdate?>(null)
 
@@ -112,23 +136,28 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     private var staleJob: Job? = null
 
     /**
-     * Call right after the phone timer starts. With [enabled] off (the "Use
-     * watch" setting) nothing is sent.
+     * Call right after the phone timer starts. With [mode] OFF (the "Watch
+     * link" setting) there is no link at all; with MANUAL nothing is sent
+     * until the user taps LINK WATCH.
      */
     fun begin(
         context: Context,
         timer: TimerViewModel,
         name: String?,
         intervals: List<Interval>,
-        enabled: Boolean,
+        mode: WatchLinkMode,
     ) {
         val startedAt = System.currentTimeMillis()
         end()
-        if (!enabled) return
+        if (mode == WatchLinkMode.OFF) return
 
         val id = UUID.randomUUID().toString()
         val synced = intervals.toSyncedIntervals()
         attach(context, timer, id, name ?: "Workout", synced)
+        if (mode == WatchLinkMode.MANUAL) {
+            _state.value = LinkState.UNLINKED
+            return
+        }
         val start = LiveStart(
             linkId = id,
             sessionName = sessionName,
@@ -140,14 +169,14 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     }
 
     /**
-     * The user tapped the NO WATCH tag: start again, lined up with where the
-     * phone timer is now. The same linkId is used, so a watch that is already
-     * running this workout just answers yes.
+     * The user tapped the NO WATCH, LOST or LINK WATCH tag: start again,
+     * lined up with where the phone timer is now. The same linkId is used, so
+     * a watch that is already running this workout just answers yes.
      */
     fun retry() {
         val id = linkId ?: return
         val state = timer?.uiState?.value ?: return
-        val canRetry = _state.value == LinkState.NO_WATCH || _state.value == LinkState.LOST
+        val canRetry = _state.value in listOf(LinkState.NO_WATCH, LinkState.LOST, LinkState.UNLINKED)
         if (!canRetry || state.phase == TimerPhase.FINISHED) return
 
         val start = LiveStart(
@@ -176,6 +205,7 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
         if (domainIntervals.isEmpty() || position.ended || position.index >= domainIntervals.size) return false
 
         attach(context, timer, request.linkId, request.sessionName, request.intervals)
+        followingWatch = true
         watchNodeId = pending.nodeId
         lastControlSentAt = request.position.sentAtEpochMillis
         timer.start(domainIntervals)
@@ -202,10 +232,36 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
         connectJob?.cancel()
         staleJob?.cancel()
         linkId = null
+        followingWatch = false
         watchNodeId = null
         timer = null
         _state.value = LinkState.OFF
         _metrics.value = null
+    }
+
+    /**
+     * The user confirmed STOP SYNC? on the phone. The workout's owner keeps
+     * it: a phone-started workout carries on here, unlinked. A workout the
+     * phone was following is dropped, and [stepOut] closes the timer.
+     */
+    fun stopSyncing() {
+        val id = linkId ?: return
+        send(LivePaths.UNLINK, LiveLinkCodec.encode(LiveUnlink(id)))
+        syncStopped()
+    }
+
+    /** Sync stopped, from either device. */
+    private fun syncStopped() {
+        if (followingWatch) {
+            end()
+            _stepOut.tryEmit(Unit)
+        } else {
+            connectJob?.cancel()
+            staleJob?.cancel()
+            watchNodeId = null
+            _state.value = LinkState.UNLINKED
+            _metrics.value = null
+        }
     }
 
     /** Leaving the timer screen: a workout still going is ended on the watch too. */
@@ -242,6 +298,10 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
                     heardFromWatch()
                     onControl(control)
                 }
+            }
+            LivePaths.UNLINK -> {
+                val unlink = LiveLinkCodec.decodeUnlink(event.data) ?: return
+                if (fromLinkedWatch(event, unlink.linkId, id)) syncStopped()
             }
             LivePaths.METRICS -> {
                 val metrics = LiveLinkCodec.decodeMetrics(event.data) ?: return

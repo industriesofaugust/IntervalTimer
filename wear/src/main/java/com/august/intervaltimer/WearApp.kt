@@ -81,6 +81,16 @@ fun WearApp(isAmbient: Boolean) {
         if (WorkoutSession.inProgress) navController.open(Route.TIMER)
     }
 
+    // The phone owns the workout and syncing stopped: this copy is gone, so
+    // leave its timer. Anywhere else the user stays where they are.
+    LaunchedEffect(Unit) {
+        WorkoutSession.stepOut.collect {
+            if (navController.currentDestination?.route == Route.TIMER) {
+                navController.popBackStack(Route.HOME, inclusive = false)
+            }
+        }
+    }
+
     fun beginWorkout(name: String, intervals: List<Interval>) {
         WatchStores.addRecent(name, intervals)
         WorkoutSession.start(context, name, intervals)

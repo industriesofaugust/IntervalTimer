@@ -110,7 +110,8 @@ class WorkoutService : Service() {
         }
         scope.launch {
             WorkoutSession.state
-                .map { Triple(it.phase, it.currentIndex, it.isPaused) }
+                // Empty counts as a change, so dropping a workout in get-ready shuts down.
+                .map { listOf(it.intervals.isEmpty(), it.phase, it.currentIndex, it.isPaused) }
                 .distinctUntilChanged()
                 .collect {
                     val state = WorkoutSession.state.value

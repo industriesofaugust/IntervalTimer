@@ -137,6 +137,15 @@ class LiveLinkTest {
     }
 
     @Test
+    fun `an unlink message survives the trip`() {
+        val unlink = LiveUnlink("abc")
+
+        assertEquals(unlink, LiveLinkCodec.decodeUnlink(LiveLinkCodec.encode(unlink)))
+        assertNull(LiveLinkCodec.decodeUnlink("not json".encodeToByteArray()))
+        assertNull(LiveLinkCodec.decodeUnlink(ByteArray(0)))
+    }
+
+    @Test
     fun `a sync request from the watch survives the trip`() {
         val request = LiveRequest(
             linkId = "w1",

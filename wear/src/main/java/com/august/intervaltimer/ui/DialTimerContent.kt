@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -135,8 +136,10 @@ internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, forma
     val linkState by WorkoutSession.linkState.collectAsState()
 
     var controlsVisible by remember { mutableStateOf(false) }
+    // Each tap on the link chip counts, so STOP SYNC? is not hidden while it waits.
+    var linkChipTaps by remember { mutableIntStateOf(0) }
     // Controls stay up while paused, otherwise they tuck away on their own.
-    LaunchedEffect(controlsVisible, view.isPaused) {
+    LaunchedEffect(controlsVisible, view.isPaused, linkChipTaps) {
         if (controlsVisible && !view.isPaused) {
             delay(4_000)
             controlsVisible = false
@@ -206,6 +209,7 @@ internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, forma
             ControlsOverlay(
                 isPaused = view.isPaused,
                 linkState = linkState,
+                onLinkChipTap = { linkChipTaps++ },
                 onSkip = {
                     WorkoutSession.skip()
                     controlsVisible = false
@@ -249,7 +253,12 @@ private fun UpNext(next: Interval?) {
 
 /** Pause, skip and end over a dark scrim, with the phone link chip above them. */
 @Composable
-private fun ControlsOverlay(isPaused: Boolean, linkState: LinkState, onSkip: () -> Unit) {
+private fun ControlsOverlay(
+    isPaused: Boolean,
+    linkState: LinkState,
+    onLinkChipTap: () -> Unit,
+    onSkip: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -257,7 +266,7 @@ private fun ControlsOverlay(isPaused: Boolean, linkState: LinkState, onSkip: () 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        PhoneLinkChip(linkState)
+        PhoneLinkChip(linkState, onTap = onLinkChipTap)
         Spacer(Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),

@@ -50,6 +50,7 @@ import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.HealthConnectWriter
 import com.august.intervaltimer.data.ThemeMode
+import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WhenWatchJoins
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
@@ -173,8 +174,8 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.setCountdownFormat(format) }
     }
 
-    fun setUseWatch(enabled: Boolean) {
-        viewModelScope.launch { repository.setUseWatch(enabled) }
+    fun setWatchLink(mode: WatchLinkMode) {
+        viewModelScope.launch { repository.setWatchLink(mode) }
     }
 
     fun setWhenWatchJoins(choice: WhenWatchJoins) {
@@ -333,14 +334,23 @@ fun PhoneSettingsScreen(
         SectionHeader("Watch cues")
         Spacer(Modifier.height(8.dp))
         SettingsCard {
-            ToggleRow(
-                title = "Use watch",
-                checked = settings.useWatch,
-                onCheckedChange = viewModel::setUseWatch,
-            )
-            Spacer(Modifier.height(2.dp))
             Text(
-                text = "Phone workouts also run on the watch",
+                text = "Watch link".labelCase(),
+                style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            SegmentedChoice(
+                options = listOf("Auto" to null, "Manual" to null, "Off" to null),
+                selectedIndex = settings.watchLink.ordinal,
+                onSelect = { index -> viewModel.setWatchLink(WatchLinkMode.entries[index]) },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = when (settings.watchLink) {
+                    WatchLinkMode.AUTO -> "The watch joins every workout you start"
+                    WatchLinkMode.MANUAL -> "Workouts start alone; tap Link watch to join"
+                    WatchLinkMode.OFF -> "Workouts never link to the watch"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -416,7 +426,7 @@ fun PhoneSettingsScreen(
                     onLevelChange = viewModel::setVibrationLevel,
                 )
             }
-            if (settings.useWatch) {
+            if (settings.watchLink != WatchLinkMode.OFF) {
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = "When watch joins".labelCase(),

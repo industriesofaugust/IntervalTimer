@@ -116,6 +116,15 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
         }
     }
 
+    // The watch owns this workout and sync stopped (here or on the watch):
+    // drop the phone's copy without saving it and go back.
+    LaunchedEffect(viewModel) {
+        PhoneLiveLink.stepOut.collect {
+            viewModel.stop()
+            onExit()
+        }
+    }
+
     if (state.intervals.isEmpty()) return
 
     KeepScreenOn()
@@ -140,6 +149,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
         viewModel.skip()
         PhoneLiveLink.sendState(viewModel.uiState.value)
     }
+    val onStopSync = PhoneLiveLink::stopSyncing
     val onEnd = {
         val before = viewModel.uiState.value
         // During get-ready nothing has been done, so there is nothing to summarize.
@@ -161,6 +171,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
                 liveMetrics = metrics,
                 linkState = linkState,
                 onRetryLink = PhoneLiveLink::retry,
+                onStopSync = onStopSync,
                 onTogglePause = onTogglePause,
                 onSkip = onSkip,
                 onEnd = onEnd,
@@ -172,6 +183,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
             liveMetrics = metrics,
             linkState = linkState,
             onRetryLink = PhoneLiveLink::retry,
+            onStopSync = onStopSync,
             onTogglePause = onTogglePause,
             onSkip = onSkip,
             onEnd = onEnd,
@@ -186,6 +198,7 @@ private fun RunningContent(
     liveMetrics: LiveMetricsUpdate?,
     linkState: LinkState,
     onRetryLink: () -> Unit,
+    onStopSync: () -> Unit,
     onTogglePause: () -> Unit,
     onSkip: () -> Unit,
     onEnd: () -> Unit,
@@ -217,7 +230,7 @@ private fun RunningContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            LinkTag(linkState, onRetryLink)
+            LinkTag(linkState, onRetryLink, onStopSync)
         }
         LinearProgressIndicator(
             progress = { state.sessionProgress },

@@ -158,3 +158,17 @@ Link experience (v0.15):
   on the Minimal face the phone glyph itself) asks the phone, which shows
   "Workout on your watch — tap to follow" (or a `WORKOUT ON WATCH · FOLLOW`
   banner on Home). Ending the watch workout first withdraws the request.
+
+Turning sync on and off (v0.16):
+
+- Settings `WATCH LINK`: `AUTO` (watch joins every phone workout) /
+  `MANUAL` (workouts start unlinked; tag shows `LINK WATCH`, tap to link) /
+  `OFF` (no tag, no link). Replaces `USE WATCH` (on -> AUTO, off -> OFF).
+- During a workout either device can stop syncing: tap the phone tag or
+  the watch chip once (it reads `STOP SYNC?` for 3 s), tap again to confirm.
+- The device the workout was started on keeps it and saves it. The other
+  device steps out: it stops its copy without saving (the watch returns to
+  its home screen, the phone timer closes).
+- Sync can be turned back on from the device that owns the workout (phone
+  tag `LINK WATCH`, watch chip `SYNC PHONE`); the other device rejoins at
+  the current position.

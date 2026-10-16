@@ -22,6 +22,7 @@ object LivePaths {
     const val CONTROL = "/live/control"
     const val METRICS = "/live/metrics"
     const val REQUEST = "/live/request"
+    const val UNLINK = "/live/unlink"
 
     /** Declared by the watch app (res/values/wear.xml) so the phone can see it is installed and reachable. */
     const val WATCH_CAPABILITY = "interval_timer_watch"
@@ -43,7 +44,16 @@ enum class LinkState {
 
     /** Was linked, but nothing has been heard from the other device for a while. */
     LOST,
+
+    /**
+     * Phone only: a workout that could be linked but is not, because it
+     * started in MANUAL mode or syncing was stopped. Tapping the tag links it.
+     */
+    UNLINKED,
 }
+
+/** How long STOP SYNC? waits for the second tap, on both devices. */
+const val STOP_SYNC_CONFIRM_MILLIS = 3_000L
 
 /** Phone to watch: "I just started this workout; join it." */
 @Serializable
@@ -93,6 +103,15 @@ data class LiveRequest(
     val position: LiveControl,
 )
 
+/**
+ * Either device to the other: "stop syncing this workout". The device that
+ * started the workout keeps it; the other drops its copy without saving.
+ */
+@Serializable
+data class LiveUnlink(
+    val linkId: String,
+)
+
 /** Watch to phone, every few seconds: what the sensors are reading. */
 @Serializable
 data class LiveMetricsUpdate(
@@ -125,6 +144,7 @@ object LiveLinkCodec {
     fun encode(message: LiveMetricsUpdate): ByteArray =
         encode(LiveMetricsUpdate.serializer(), message)
     fun encode(message: LiveRequest): ByteArray = encode(LiveRequest.serializer(), message)
+    fun encode(message: LiveUnlink): ByteArray = encode(LiveUnlink.serializer(), message)
 
     fun decodeStart(bytes: ByteArray): LiveStart? = decode(LiveStart.serializer(), bytes)
     fun decodeAck(bytes: ByteArray): LiveAck? = decode(LiveAck.serializer(), bytes)
@@ -132,6 +152,7 @@ object LiveLinkCodec {
     fun decodeMetrics(bytes: ByteArray): LiveMetricsUpdate? =
         decode(LiveMetricsUpdate.serializer(), bytes)
     fun decodeRequest(bytes: ByteArray): LiveRequest? = decode(LiveRequest.serializer(), bytes)
+    fun decodeUnlink(bytes: ByteArray): LiveUnlink? = decode(LiveUnlink.serializer(), bytes)
 
     private fun <T> encode(serializer: KSerializer<T>, message: T): ByteArray =
         json.encodeToString(serializer, message).encodeToByteArray()

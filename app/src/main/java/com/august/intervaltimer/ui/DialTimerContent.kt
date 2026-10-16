@@ -95,6 +95,7 @@ internal fun DialRunningContent(
     liveMetrics: LiveMetricsUpdate?,
     linkState: LinkState,
     onRetryLink: () -> Unit,
+    onStopSync: () -> Unit,
     onTogglePause: () -> Unit,
     onSkip: () -> Unit,
     onEnd: () -> Unit,
@@ -125,7 +126,7 @@ internal fun DialRunningContent(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            LinkTag(linkState, onRetryLink)
+            LinkTag(linkState, onRetryLink, onStopSync)
         }
         Spacer(Modifier.weight(1f))
 

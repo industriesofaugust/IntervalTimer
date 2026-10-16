@@ -52,6 +52,7 @@ import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.ThemeMode
 import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.data.WatchRequestNotification
+import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.ActivityScreen
@@ -138,8 +139,8 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
     fun startWorkout(name: String, intervals: List<Interval>) {
         sessionName = name
         timerViewModel.start(intervals)
-        // Asks the watch to run it too, unless "Use watch" is off.
-        PhoneLiveLink.begin(app, timerViewModel, name, intervals, settings.useWatch)
+        // AUTO asks the watch to run it too; MANUAL waits for LINK WATCH; OFF does nothing.
+        PhoneLiveLink.begin(app, timerViewModel, name, intervals, settings.watchLink)
     }
 
     // The user chose to join a workout that is running on the watch.
@@ -158,16 +159,16 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
         }
     }
 
-    // Asked when "Use watch" is on, so a request from the watch can show a notification.
+    // Asked when the watch link is on, so a request from the watch can show a notification.
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
     LaunchedEffect(Unit) {
-        app.settingsRepository.settings.map { it.useWatch }.distinctUntilChanged().collect { useWatch ->
+        app.settingsRepository.settings.map { it.watchLink }.distinctUntilChanged().collect { watchLink ->
             val granted = ContextCompat.checkSelfPermission(
                 app, Manifest.permission.POST_NOTIFICATIONS
             ) == PackageManager.PERMISSION_GRANTED
-            if (useWatch && Build.VERSION.SDK_INT >= 33 && !granted) {
+            if (watchLink != WatchLinkMode.OFF && Build.VERSION.SDK_INT >= 33 && !granted) {
                 notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }

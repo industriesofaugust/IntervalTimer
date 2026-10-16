@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.LivePaths
@@ -49,14 +50,14 @@ import kotlinx.coroutines.tasks.await
 
 /**
  * "WATCH READY" or "NO WATCH" with a small dot, for the screens where a
- * workout is started. Hidden when "Use watch" is off.
+ * workout is started. Hidden when the watch link is off.
  */
 @Composable
 fun WatchReadyStatus(modifier: Modifier = Modifier) {
     val app = LocalContext.current.applicationContext as TimerApp
-    val useWatch by remember { app.settingsRepository.settings.map { it.useWatch } }
-        .collectAsState(initial = false)
-    if (useWatch) WatchReadyRow(modifier)
+    val mode by remember { app.settingsRepository.settings.map { it.watchLink } }
+        .collectAsState(initial = WatchLinkMode.OFF)
+    if (mode != WatchLinkMode.OFF) WatchReadyRow(modifier)
 }
 
 @Composable

@@ -51,7 +51,6 @@ import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.settings.rememberWatchSettings
-import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.ui.components.ButtonIcon
 import com.august.intervaltimer.ui.components.HoldToEndButton
@@ -235,11 +234,8 @@ private fun RunningContent(
                 }
             }
             MinimalHeartRate(live)
-            // This face has no tap-for-controls screen, so the glyph is the SYNC PHONE button.
-            PhoneGlyph(
-                state = linkState,
-                onClick = if (linkState == LinkState.OFF) WorkoutSession::requestPhoneSync else null,
-            )
+            // This face has no tap-for-controls screen, so the glyph is the SYNC PHONE / STOP SYNC? button.
+            PhoneGlyph(state = linkState, tappable = true)
         }
     }
 }

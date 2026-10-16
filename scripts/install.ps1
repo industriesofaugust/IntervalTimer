@@ -25,9 +25,13 @@ if (-not $NoBuild) {
 $phoneApk = "$project\app\build\outputs\apk\release\app-release.apk"
 $watchApk = "$project\wear\build\outputs\apk\release\wear-release.apk"
 
-$devices = adb devices | Select-Object -Skip 1 |
+# The first adb call of the day prints "starting daemon" on the error
+# stream; that is not a failure, so don't let it stop the script here.
+$ErrorActionPreference = 'Continue'
+$devices = adb devices 2>$null | Select-Object -Skip 1 |
     Where-Object { $_ -match '\tdevice$' } |
     ForEach-Object { ($_ -split '\t')[0] }
+$ErrorActionPreference = 'Stop'
 
 if (-not $devices) { throw 'No phone or watch connected (check adb devices).' }
 

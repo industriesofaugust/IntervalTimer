@@ -61,8 +61,8 @@ class ResultListenerService : WearableListenerService() {
     // On Home the app shows its own banner; anywhere else, or closed, it is a notification.
     private fun handleWatchRequest(pending: WatchRequest) {
         val app = application as TimerApp
-        val useWatch = runBlocking { app.settingsRepository.settings.first().useWatch }
-        if (!useWatch || pending.request.position.ended) return
+        val mode = runBlocking { app.settingsRepository.settings.first().watchLink }
+        if (mode == WatchLinkMode.OFF || pending.request.position.ended) return
 
         PhoneLiveLink.offerWatchRequest(pending)
         if (PhoneLiveLink.watchRequest.value != pending) return

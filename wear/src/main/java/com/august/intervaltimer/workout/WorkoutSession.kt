@@ -15,6 +15,7 @@ import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.LivePaths
 import com.august.intervaltimer.sync.LiveRequest
 import com.august.intervaltimer.sync.LiveStart
+import com.august.intervaltimer.sync.LiveUnlink
 import com.august.intervaltimer.sync.ResultSyncCodec
 import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WorkoutResult
@@ -31,9 +32,11 @@ import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -130,7 +133,8 @@ object WorkoutSession {
 
     // --- The live link: a workout the phone started and the watch joined. ---
 
-    private class Link(val id: String, val phoneNodeId: String)
+    /** [phoneOwned]: the phone started this workout and keeps it if syncing stops. */
+    private class Link(val id: String, val phoneNodeId: String, val phoneOwned: Boolean)
 
     private var link: Link? = null
     private var lastControlSentAt = 0L
@@ -174,7 +178,7 @@ object WorkoutSession {
         val totalMillis = TimerUiState.LEAD_IN_MILLIS + intervals.sumOf { it.durationSeconds * 1000L }
         if (intervals.isEmpty() || elapsed >= totalMillis) return false
 
-        link = Link(message.linkId, phoneNodeId)
+        link = Link(message.linkId, phoneNodeId, phoneOwned = true)
         lastControlSentAt = 0L
         if (begin(context, message.sessionName, intervals, elapsed)) {
             _linkState.value = LinkState.LINKED
@@ -239,7 +243,7 @@ object WorkoutSession {
             if (ack.linkId != pending.id || !ack.accepted || !inProgress || link != null) {
                 return@launch
             }
-            link = Link(pending.id, phoneNodeId)
+            link = Link(pending.id, phoneNodeId, phoneOwned = false)
             lastControlSentAt = 0L
             requested = null
             requestTimeout?.cancel()
@@ -268,6 +272,50 @@ object WorkoutSession {
             lastControlSentAt = control.sentAtEpochMillis
             engine.applyLiveControl(control, System.currentTimeMillis())
         }
+    }
+
+    // --- Stopping the sync: the owner keeps the workout, the other device drops its copy. ---
+
+    private val _stepOut = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Emits when this watch drops a workout the phone owns; the timer screen goes back Home. */
+    val stepOut: SharedFlow<Unit> = _stepOut.asSharedFlow()
+
+    /** The user confirmed STOP SYNC? on the watch. */
+    fun stopSync() {
+        val current = link ?: return
+        send(LivePaths.UNLINK, LiveLinkCodec.encode(LiveUnlink(current.id)))
+        syncStopped(current)
+    }
+
+    /** The phone stopped syncing. Safe to call from any thread. */
+    fun onLiveUnlink(unlink: LiveUnlink) {
+        scope.launch {
+            val current = link ?: return@launch
+            if (unlink.linkId == current.id) syncStopped(current)
+        }
+    }
+
+    private fun syncStopped(stopped: Link) {
+        if (!inProgress) return
+        if (stopped.phoneOwned) {
+            dropCopy()
+        } else {
+            // The watch's own workout carries on alone; SYNC PHONE can link it again.
+            forgetLink()
+        }
+    }
+
+    /**
+     * Stops this copy of a phone-owned workout without saving it: the phone
+     * keeps the workout and saves it. Nothing is published.
+     */
+    private fun dropCopy() {
+        resultPublished = true
+        forgetLink()
+        engine.stop()
+        scope.launch { recorder?.stop() }
+        _stepOut.tryEmit(Unit)
     }
 
     /** Called every few seconds by [WorkoutService] while a linked workout runs. */
