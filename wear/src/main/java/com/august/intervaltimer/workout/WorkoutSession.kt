@@ -75,6 +75,9 @@ object WorkoutSession {
         val newRecorder = WorkoutMetricsRecorder(app)
         recorder = newRecorder
         scope.launch { newRecorder.live.collect { _live.value = it } }
+        // A workout this app started before it was closed may still be running
+        // in Health Services, holding the heart-rate sensor; end it.
+        scope.launch { if (!inProgress) newRecorder.endLeftoverExercise() }
     }
 
     /** A workout the user started on the watch. */
@@ -129,6 +132,7 @@ object WorkoutSession {
     fun clear() {
         forgetLink()
         engine.stop()
+        scope.launch { recorder?.endLeftoverExercise() }
     }
 
     // --- The live link: a workout the phone started and the watch joined. ---

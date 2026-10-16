@@ -9,6 +9,7 @@ import androidx.health.services.client.data.BatchingMode
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.ExerciseConfig
 import androidx.health.services.client.data.ExerciseLapSummary
+import androidx.health.services.client.data.ExerciseTrackedStatus
 import androidx.health.services.client.data.ExerciseType
 import androidx.health.services.client.data.ExerciseUpdate
 import com.august.intervaltimer.sync.HrSample
@@ -17,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 data class LiveMetrics(
@@ -93,9 +96,13 @@ class WorkoutMetricsRecorder(context: Context) {
         }
     }
 
+    // Start and stop never overlap: a stop that arrived while the exercise was
+    // still starting used to find nothing to end, and the exercise kept running.
+    private val lock = Mutex()
+
     /** Safe to call repeatedly; only the first successful call starts anything. */
-    suspend fun start() {
-        if (recording) return
+    suspend fun start() = lock.withLock {
+        if (recording) return@withLock
         heartRateSamples.clear()
         heartRateTimeline.clear()
         startedAtRealtime = SystemClock.elapsedRealtime()
@@ -123,8 +130,8 @@ class WorkoutMetricsRecorder(context: Context) {
     }
 
     /** Ends the exercise and returns whatever was gathered. */
-    suspend fun stop(): LiveMetrics {
-        if (recording) {
+    suspend fun stop(): LiveMetrics = lock.withLock {
+        if (recording || ownsRunningExercise()) {
             recording = false
             // Readings still held back by the watch arrive in one last update
             // after ending; wait for it so the end of the workout isn't lost.
@@ -135,6 +142,23 @@ class WorkoutMetricsRecorder(context: Context) {
             ended = null
             runCatching { exerciseClient.clearUpdateCallbackAsync(callback).await() }
         }
-        return _live.value
+        _live.value
     }
+
+    /**
+     * Health Services keeps an exercise going even if the app that started it
+     * is closed or killed, and while it runs the watch's own all-day heart
+     * rate tracking stays paused. Call when no workout is in progress to end
+     * any exercise this app left behind.
+     */
+    suspend fun endLeftoverExercise() = lock.withLock {
+        if (recording || !ownsRunningExercise()) return@withLock
+        runCatching { exerciseClient.endExerciseAsync().await() }
+        runCatching { exerciseClient.clearUpdateCallbackAsync(callback).await() }
+    }
+
+    private suspend fun ownsRunningExercise(): Boolean = runCatching {
+        exerciseClient.getCurrentExerciseInfoAsync().await().exerciseTrackedStatus ==
+            ExerciseTrackedStatus.OWNED_EXERCISE_IN_PROGRESS
+    }.getOrDefault(false)
 }
