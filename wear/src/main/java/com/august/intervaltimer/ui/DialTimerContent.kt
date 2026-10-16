@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,10 +53,13 @@ import com.august.intervaltimer.metrics.LiveMetrics
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.ui.components.ButtonIcon
 import com.august.intervaltimer.ui.components.DialType
 import com.august.intervaltimer.ui.components.HoldToEndButton
+import com.august.intervaltimer.ui.components.PhoneGlyph
+import com.august.intervaltimer.ui.components.PhoneLinkChip
 import com.august.intervaltimer.ui.components.SessionRing
 import com.august.intervaltimer.workout.WorkoutSession
 import kotlinx.coroutines.delay
@@ -128,6 +132,8 @@ internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, forma
         label = "accent",
     )
 
+    val linkState by WorkoutSession.linkState.collectAsState()
+
     var controlsVisible by remember { mutableStateOf(false) }
     // Controls stay up while paused, otherwise they tuck away on their own.
     LaunchedEffect(controlsVisible, view.isPaused) {
@@ -186,6 +192,11 @@ internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, forma
             }
             HeartRateLine(live)
         }
+        // Over the bottom of the dial so the centred text doesn't move.
+        PhoneGlyph(
+            state = linkState,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 13.dp),
+        )
 
         AnimatedVisibility(
             visible = controlsVisible || view.isPaused,
@@ -194,6 +205,7 @@ internal fun DialRunningContent(view: TimerView, live: State<LiveMetrics>, forma
         ) {
             ControlsOverlay(
                 isPaused = view.isPaused,
+                linkState = linkState,
                 onSkip = {
                     WorkoutSession.skip()
                     controlsVisible = false
@@ -235,9 +247,9 @@ private fun UpNext(next: Interval?) {
     )
 }
 
-/** Pause, skip and end over a dark scrim. */
+/** Pause, skip and end over a dark scrim, with the phone link chip above them. */
 @Composable
-private fun ControlsOverlay(isPaused: Boolean, onSkip: () -> Unit) {
+private fun ControlsOverlay(isPaused: Boolean, linkState: LinkState, onSkip: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -245,6 +257,8 @@ private fun ControlsOverlay(isPaused: Boolean, onSkip: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        PhoneLinkChip(linkState)
+        Spacer(Modifier.height(8.dp))
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,

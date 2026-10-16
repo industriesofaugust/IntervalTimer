@@ -1,10 +1,16 @@
 package com.august.intervaltimer
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +28,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -41,6 +50,8 @@ import androidx.navigation.navArgument
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.ThemeMode
+import com.august.intervaltimer.data.WatchRequest
+import com.august.intervaltimer.data.WatchRequestNotification
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.ActivityScreen
@@ -53,15 +64,41 @@ import com.august.intervaltimer.ui.WorkoutDetailScreen
 import com.august.intervaltimer.ui.components.DialBottomBar
 import com.august.intervaltimer.ui.theme.IntervalTimerTheme
 import com.august.intervaltimer.ui.theme.isDial
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    // A workout on the watch that the user chose to follow, from the notification.
+    private var followRequest by mutableStateOf<WatchRequest?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // After a rotation or theme change the old intent comes back; it was already handled.
+        if (savedInstanceState == null) followRequest = WatchRequestNotification.requestFrom(intent)
         setContent {
-            IntervalTimerApp()
+            IntervalTimerApp(
+                followRequest = followRequest,
+                onFollowHandled = { followRequest = null },
+            )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        WatchRequestNotification.requestFrom(intent)?.let { followRequest = it }
+    }
+
+    // Tells the listener service whether to show a banner or a notification.
+    override fun onStart() {
+        super.onStart()
+        PhoneLiveLink.appVisible = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        PhoneLiveLink.appVisible = false
     }
 }
 
@@ -78,7 +115,7 @@ private val topLevelPages = listOf(
 )
 
 @Composable
-fun IntervalTimerApp() {
+fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () -> Unit = {}) {
     val app = LocalContext.current.applicationContext as TimerApp
     val settings by app.settingsRepository.settings.collectAsState(initial = AppSettings())
     val darkTheme = when (settings.themeMode) {
@@ -105,9 +142,47 @@ fun IntervalTimerApp() {
         PhoneLiveLink.begin(app, timerViewModel, name, intervals, settings.useWatch)
     }
 
+    // The user chose to join a workout that is running on the watch.
+    fun followWatch(pending: WatchRequest) {
+        WatchRequestNotification.cancel(app)
+        if (PhoneLiveLink.follow(app, timerViewModel, pending)) {
+            sessionName = pending.request.sessionName
+            navController.navigate("timer") { launchSingleTop = true }
+        }
+    }
+
+    LaunchedEffect(followRequest) {
+        followRequest?.let {
+            followWatch(it)
+            onFollowHandled()
+        }
+    }
+
+    // Asked when "Use watch" is on, so a request from the watch can show a notification.
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        app.settingsRepository.settings.map { it.useWatch }.distinctUntilChanged().collect { useWatch ->
+            val granted = ContextCompat.checkSelfPermission(
+                app, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (useWatch && Build.VERSION.SDK_INT >= 33 && !granted) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == "home"
+
+    // Where a request from the watch shows as a banner rather than a notification.
+    val homeInView = showBottomBar && pagerState.currentPage == 0
+    DisposableEffect(homeInView) {
+        PhoneLiveLink.homeVisible = homeInView
+        onDispose { PhoneLiveLink.homeVisible = false }
+    }
 
     // Back on Activity or Settings returns to the first page. Only enabled on
     // "home", so it never takes back presses from the other screens.
@@ -164,6 +239,7 @@ fun IntervalTimerApp() {
                                     startWorkout(name, intervals)
                                     navController.navigate("timer")
                                 },
+                                onFollowWatch = ::followWatch,
                             )
                             1 -> ActivityScreen(
                                 onOpenWorkout = { id -> navController.navigate("workout/$id") },

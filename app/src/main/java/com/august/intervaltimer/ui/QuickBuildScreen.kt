@@ -150,7 +150,9 @@ fun QuickBuildScreen(
                 style = if (isDial()) DialType.button else MaterialTheme.typography.labelLarge,
             )
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
+        WatchReadyStatus(Modifier.align(Alignment.CenterHorizontally))
+        Spacer(Modifier.height(10.dp))
         OutlinedButton(
             onClick = { onCustomize(rounds, workSeconds, restSeconds) },
             modifier = Modifier

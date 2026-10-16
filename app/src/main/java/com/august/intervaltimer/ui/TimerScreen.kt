@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -43,14 +44,17 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.PhoneLiveLink
+import com.august.intervaltimer.data.WhenWatchJoins
 import com.august.intervaltimer.data.recordPhoneWorkout
 import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.stepsText
 import com.august.intervaltimer.timer.SoundPlayer
@@ -80,9 +84,15 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
         onDispose { soundPlayer?.release() }
     }
     val haptics = remember { HapticsPlayer(app) }
-    LaunchedEffect(viewModel, soundPlayer, settings.vibrate, settings.vibrationLevel) {
+    LaunchedEffect(viewModel, soundPlayer, settings.vibrate, settings.vibrationLevel, settings.whenWatchJoins) {
         viewModel.cues.collect { cue ->
-            if (settings.vibrate) haptics.play(cue, settings.vibrationLevel)
+            // While the watch is running the workout too, the setting decides what the phone adds.
+            // On NO WATCH or LOST the watch is not cueing, so the phone does.
+            val watchJoined = PhoneLiveLink.state.value == LinkState.LINKED
+            val playSound = !watchJoined || settings.whenWatchJoins != WhenWatchJoins.QUIET
+            val playVibration = !watchJoined || settings.whenWatchJoins == WhenWatchJoins.BOTH
+            if (settings.vibrate && playVibration) haptics.play(cue, settings.vibrationLevel)
+            if (!playSound) return@collect
             when (cue) {
                 TimerCue.COUNTDOWN_TICK -> soundPlayer?.countdownTick()
                 TimerCue.WORK_START -> soundPlayer?.workStart()
@@ -98,7 +108,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
     LaunchedEffect(state.phase) {
         if (state.phase == TimerPhase.FINISHED && !saved && state.elapsedSecondsAtEnd > 0) {
             saved = true
-            if (!PhoneLiveLink.linked.value) app.recordPhoneWorkout(sessionName, state)
+            if (!PhoneLiveLink.watchHasWorkout) app.recordPhoneWorkout(sessionName, state)
         }
     }
 
@@ -106,6 +116,7 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
 
     KeepScreenOn()
     val metrics by PhoneLiveLink.metrics.collectAsState()
+    val linkState by PhoneLiveLink.state.collectAsState()
 
     // Leaving also ends the workout on the watch, if it is still going.
     val onDone = {
@@ -144,6 +155,8 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
                 sessionName = sessionName,
                 format = settings.countdownFormat,
                 liveMetrics = metrics,
+                linkState = linkState,
+                onRetryLink = PhoneLiveLink::retry,
                 onTogglePause = onTogglePause,
                 onSkip = onSkip,
                 onEnd = onEnd,
@@ -151,7 +164,10 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
         state.phase == TimerPhase.FINISHED -> FinishedContent(state = state, onDone = onDone)
         else -> RunningContent(
             state = state,
+            sessionName = sessionName,
             liveMetrics = metrics,
+            linkState = linkState,
+            onRetryLink = PhoneLiveLink::retry,
             onTogglePause = onTogglePause,
             onSkip = onSkip,
             onEnd = onEnd,
@@ -162,7 +178,10 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
 @Composable
 private fun RunningContent(
     state: TimerUiState,
+    sessionName: String?,
     liveMetrics: LiveMetricsUpdate?,
+    linkState: LinkState,
+    onRetryLink: () -> Unit,
     onTogglePause: () -> Unit,
     onSkip: () -> Unit,
     onEnd: () -> Unit,
@@ -181,6 +200,21 @@ private fun RunningContent(
             .safeDrawingPadding()
             .padding(24.dp),
     ) {
+        // A fixed height, so nothing moves when the link tag appears.
+        Row(
+            modifier = Modifier.fillMaxWidth().height(40.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = sessionName.orEmpty(),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            LinkTag(linkState, onRetryLink)
+        }
         LinearProgressIndicator(
             progress = { state.sessionProgress },
             modifier = Modifier
@@ -202,7 +236,7 @@ private fun RunningContent(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 PhaseChip(text = phaseLabel(state), accent = accent)
-                LiveMetricsRow(liveMetrics, Modifier.width(290.dp))
+                LiveMetricsRow(liveMetrics, stale = linkState == LinkState.LOST, modifier = Modifier.width(290.dp))
                 Box(
                     modifier = Modifier.size(290.dp),
                     contentAlignment = Alignment.Center,
@@ -244,6 +278,7 @@ private fun RunningContent(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.alpha(if (linkState == LinkState.LOST) STALE_ALPHA else 1f),
                 )
             }
         }

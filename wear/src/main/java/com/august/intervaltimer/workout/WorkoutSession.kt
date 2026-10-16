@@ -10,8 +10,10 @@ import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.LiveAck
 import com.august.intervaltimer.sync.LiveControl
 import com.august.intervaltimer.sync.LiveLinkCodec
+import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.LivePaths
+import com.august.intervaltimer.sync.LiveRequest
 import com.august.intervaltimer.sync.LiveStart
 import com.august.intervaltimer.sync.ResultSyncCodec
 import com.august.intervaltimer.sync.SyncPaths
@@ -26,13 +28,16 @@ import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 
 /**
  * The one workout the watch can be running. It lives for the whole app
@@ -72,7 +77,7 @@ object WorkoutSession {
     /** A workout the user started on the watch. */
     fun start(context: Context, name: String, intervals: List<Interval>) {
         if (intervals.isEmpty()) return
-        link = null
+        forgetLink()
         begin(context, name, intervals, elapsedMillis = 0L)
     }
 
@@ -114,11 +119,12 @@ object WorkoutSession {
         engine.endEarly()
         // Sent from just before ending, so the phone ends at the same place.
         if (wasRunning) sendControl(before, ended = true)
+        withdrawRequest(before)
     }
 
     /** Dismisses the finished summary and returns to "no workout". */
     fun clear() {
-        link = null
+        forgetLink()
         engine.stop()
     }
 
@@ -128,6 +134,22 @@ object WorkoutSession {
 
     private var link: Link? = null
     private var lastControlSentAt = 0L
+
+    private val _linkState = MutableStateFlow(LinkState.OFF)
+
+    /**
+     * LINKED while the phone runs this workout too. CONNECTING while a SYNC
+     * PHONE request waits for the phone. There is no LOST here: the phone
+     * sends no heartbeat, so the watch cannot tell a quiet phone from a gone one.
+     */
+    val linkState: StateFlow<LinkState> = _linkState.asStateFlow()
+
+    private fun forgetLink() {
+        link = null
+        requested = null
+        requestTimeout?.cancel()
+        _linkState.value = LinkState.OFF
+    }
 
     /**
      * The phone started a workout. Joins it, lined up with the phone's clock,
@@ -154,11 +176,85 @@ object WorkoutSession {
 
         link = Link(message.linkId, phoneNodeId)
         lastControlSentAt = 0L
-        if (begin(context, message.sessionName, intervals, elapsed)) return true
+        if (begin(context, message.sessionName, intervals, elapsed)) {
+            _linkState.value = LinkState.LINKED
+            return true
+        }
         // Android did not allow the foreground service; carry on without the watch.
         link = null
         engine.stop()
         return false
+    }
+
+    // --- SYNC PHONE: a workout the watch started, offered to the phone. ---
+
+    private class Request(val id: String, val nodeIds: List<String>)
+
+    private var requested: Request? = null
+    private var requestTimeout: Job? = null
+
+    /**
+     * Asks the phone to follow this workout. The phone only joins when the
+     * user taps its notification, so an answer can take a while.
+     */
+    fun requestPhoneSync() {
+        val context = appContext ?: return
+        if (!inProgress || link != null || _linkState.value == LinkState.CONNECTING) return
+        _linkState.value = LinkState.CONNECTING
+        requestTimeout?.cancel()
+        requestTimeout = scope.launch {
+            delay(REQUEST_WAIT_MILLIS)
+            // Back to SYNC PHONE. The request stays valid: a late tap on the phone still links.
+            if (link == null) _linkState.value = LinkState.OFF
+        }
+        scope.launch {
+            val nodeIds = runCatching {
+                Wearable.getNodeClient(context).connectedNodes.await().map { it.id }
+            }.getOrDefault(emptyList())
+            if (link != null) return@launch
+            if (nodeIds.isEmpty()) {
+                requestTimeout?.cancel()
+                _linkState.value = LinkState.OFF
+                return@launch
+            }
+            // A new tap replaces the old request, so the phone doesn't show two.
+            withdrawRequest(state.value)
+            val id = UUID.randomUUID().toString()
+            requested = Request(id, nodeIds)
+            val request = LiveRequest(
+                linkId = id,
+                sessionName = sessionName.orEmpty(),
+                intervals = state.value.intervals.toSyncedIntervals(),
+                position = state.value.toLiveControl(id, System.currentTimeMillis()),
+            )
+            val bytes = LiveLinkCodec.encode(request)
+            nodeIds.forEach { sendTo(context, it, LivePaths.REQUEST, bytes) }
+        }
+    }
+
+    /** The phone answered a request. Safe to call from any thread. */
+    fun onLiveAck(ack: LiveAck, phoneNodeId: String) {
+        scope.launch {
+            val pending = requested ?: return@launch
+            if (ack.linkId != pending.id || !ack.accepted || !inProgress || link != null) {
+                return@launch
+            }
+            link = Link(pending.id, phoneNodeId)
+            lastControlSentAt = 0L
+            requested = null
+            requestTimeout?.cancel()
+            _linkState.value = LinkState.LINKED
+        }
+    }
+
+    /** Tells the phone to drop a request that is no longer wanted, such as when the workout ends. */
+    private fun withdrawRequest(snapshotOf: TimerUiState) {
+        val context = appContext ?: return
+        val pending = requested ?: return
+        requested = null
+        val control = snapshotOf.toLiveControl(pending.id, System.currentTimeMillis(), ended = true)
+        val bytes = LiveLinkCodec.encode(control)
+        pending.nodeIds.forEach { sendTo(context, it, LivePaths.CONTROL, bytes) }
     }
 
     /** The phone paused, resumed, skipped or ended. Safe to call from any thread. */
@@ -227,6 +323,11 @@ object WorkoutSession {
         val app = appContext ?: return
         val activeRecorder = recorder ?: return
         val finished = state.value
+        withdrawRequest(finished)
+        if (link == null) {
+            requestTimeout?.cancel()
+            _linkState.value = LinkState.OFF
+        }
 
         val metrics = activeRecorder.stop()
         // Ended during get-ready: nothing was done, so there is nothing to save.
@@ -270,4 +371,6 @@ object WorkoutSession {
             Wearable.getDataClient(app).putDataItem(request).await()
         }
     }
+
+    private const val REQUEST_WAIT_MILLIS = 60_000L
 }

@@ -135,4 +135,16 @@ class LiveLinkTest {
         assertNull(empty.caloriesText())
         assertNull(empty.stepsText())
     }
+
+    @Test
+    fun `a sync request from the watch survives the trip`() {
+        val request = LiveRequest(
+            linkId = "w1",
+            sessionName = "Leg day",
+            intervals = listOf(SyncedInterval("Squats", "WORK", 40), SyncedInterval("Rest", "REST", 20)),
+            position = LiveControl("w1", index = 1, remainingMillis = 12_000, paused = false, sentAtEpochMillis = 5_000),
+        )
+        assertEquals(request, LiveLinkCodec.decodeRequest(LiveLinkCodec.encode(request)))
+        assertNull(LiveLinkCodec.decodeRequest("not json".encodeToByteArray()))
+    }
 }

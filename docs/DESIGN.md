@@ -145,3 +145,16 @@ Starting a workout on the phone also runs it on the watch.
   chart) when the watch joined, otherwise the phone's own as before.
 - If the watch is out of reach, busy with its own workout, or drops out,
   the phone carries on alone exactly as before.
+Link experience (v0.15):
+
+- Phone timer tag beside the session name: `WATCH` (lit) / `CONNECTING`
+  (pulsing) / `NO WATCH` (tap to retry) / `LOST` (no data for 20 s; numbers
+  fade). Hidden when `USE WATCH` is off.
+- Home and Quick session show `WATCH READY` / `NO WATCH` before starting.
+- `WHEN WATCH JOINS` setting for the phone's own cues: `QUIET` (default) /
+  `SOUND ONLY` / `BOTH`; only applies while the tag says `WATCH`.
+- Watch-started workouts never pull the phone in by themselves. The watch's
+  link chip in the controls overlay (`SYNC PHONE` → `SENT…` → `PHONE ●`;
+  on the Minimal face the phone glyph itself) asks the phone, which shows
+  "Workout on your watch — tap to follow" (or a `WORKOUT ON WATCH · FOLLOW`
+  banner on Home). Ending the watch workout first withdraws the request.

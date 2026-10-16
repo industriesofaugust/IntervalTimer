@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -48,6 +49,7 @@ import com.august.intervaltimer.design.ringSegments
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.caloriesText
 import com.august.intervaltimer.sync.heartRateText
@@ -91,6 +93,8 @@ internal fun DialRunningContent(
     sessionName: String?,
     format: CountdownFormat,
     liveMetrics: LiveMetricsUpdate?,
+    linkState: LinkState,
+    onRetryLink: () -> Unit,
     onTogglePause: () -> Unit,
     onSkip: () -> Unit,
     onEnd: () -> Unit,
@@ -108,16 +112,28 @@ internal fun DialRunningContent(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = sessionName.orEmpty().uppercase(),
-            style = DialType.label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // A fixed height, so nothing moves when the link tag appears.
+        Row(
+            modifier = Modifier.height(40.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = sessionName.orEmpty().uppercase(),
+                style = DialType.label,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            LinkTag(linkState, onRetryLink)
+        }
         Spacer(Modifier.weight(1f))
 
-        LiveMetricsRow(liveMetrics, Modifier.fillMaxWidth().widthIn(max = 340.dp))
+        LiveMetricsRow(
+            metrics = liveMetrics,
+            stale = linkState == LinkState.LOST,
+            modifier = Modifier.fillMaxWidth().widthIn(max = 340.dp),
+        )
         Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
@@ -183,6 +199,7 @@ internal fun DialRunningContent(
                     style = DialType.caption,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
+                    modifier = Modifier.alpha(if (linkState == LinkState.LOST) STALE_ALPHA else 1f),
                 )
             }
         }
@@ -377,11 +394,22 @@ private fun StatLine(label: String, value: String) {
     }
 }
 
+/** How faint the watch's numbers get once it has gone quiet. */
+internal const val STALE_ALPHA = 0.4f
+
 /** The watch's heart rate on the left and calories on the right, just above the dial. */
 @Composable
-internal fun LiveMetricsRow(metrics: LiveMetricsUpdate?, modifier: Modifier = Modifier) {
+internal fun LiveMetricsRow(
+    metrics: LiveMetricsUpdate?,
+    stale: Boolean,
+    modifier: Modifier = Modifier,
+) {
     // Fixed height, so the dial doesn't move when the first numbers arrive.
-    Row(modifier = modifier.height(28.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Stale numbers are faded, so they don't look live.
+    Row(
+        modifier = modifier.height(28.dp).alpha(if (stale) STALE_ALPHA else 1f),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         metrics?.heartRateText()?.let {
             Icon(
                 imageVector = Icons.Filled.Favorite,

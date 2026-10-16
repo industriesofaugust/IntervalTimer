@@ -48,7 +48,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.TemplateWithIntervals
+import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.data.toDomainIntervals
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.design.intervalCountLabel
@@ -84,9 +86,11 @@ fun LibraryScreen(
     onNewTemplate: () -> Unit,
     onEditTemplate: (Long) -> Unit,
     onPlayTemplate: (String, List<Interval>) -> Unit,
+    onFollowWatch: (WatchRequest) -> Unit,
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val templates by viewModel.templates.collectAsState()
+    val watchRequest by PhoneLiveLink.watchRequest.collectAsState()
 
     // Drag state: while a card is held, we reorder a local copy of the list
     // and only save when the finger lifts.
@@ -128,6 +132,10 @@ fun LibraryScreen(
             item {
                 Column {
                     Spacer(Modifier.height(12.dp))
+                    watchRequest?.let {
+                        WatchRequestBanner(pending = it, onFollow = { onFollowWatch(it) })
+                        Spacer(Modifier.height(16.dp))
+                    }
                     if (isDial()) {
                         // The wordmark.
                         Text(text = "INTERVAL", style = DialType.title)
@@ -169,6 +177,8 @@ fun LibraryScreen(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         SectionHeader("Templates")
+                        Spacer(Modifier.width(12.dp))
+                        WatchReadyStatus()
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = onNewTemplate) {
                             Text(

@@ -21,6 +21,28 @@ object LivePaths {
     const val ACK = "/live/ack"
     const val CONTROL = "/live/control"
     const val METRICS = "/live/metrics"
+    const val REQUEST = "/live/request"
+
+    /** Declared by the watch app (res/values/wear.xml) so the phone can see it is installed and reachable. */
+    const val WATCH_CAPABILITY = "interval_timer_watch"
+}
+
+/** How the live link looks from one device, for the indicator on its timer. */
+enum class LinkState {
+    /** No link wanted (setting off, or no workout). */
+    OFF,
+
+    /** Asked the other device to join; no answer yet. */
+    CONNECTING,
+
+    /** Both devices are running the workout together. */
+    LINKED,
+
+    /** The other device did not join (out of reach, busy, or declined). */
+    NO_WATCH,
+
+    /** Was linked, but nothing has been heard from the other device for a while. */
+    LOST,
 }
 
 /** Phone to watch: "I just started this workout; join it." */
@@ -57,6 +79,20 @@ data class LiveControl(
     val sentAtEpochMillis: Long,
 )
 
+/**
+ * Watch to phone, only when the user taps SYNC PHONE on the watch: "this
+ * workout is running here; follow it if you like". The phone never joins on
+ * its own; the user taps its notification or banner. [position] says where
+ * the watch timer was when the request was sent.
+ */
+@Serializable
+data class LiveRequest(
+    val linkId: String,
+    val sessionName: String,
+    val intervals: List<SyncedInterval>,
+    val position: LiveControl,
+)
+
 /** Watch to phone, every few seconds: what the sensors are reading. */
 @Serializable
 data class LiveMetricsUpdate(
@@ -88,12 +124,14 @@ object LiveLinkCodec {
     fun encode(message: LiveControl): ByteArray = encode(LiveControl.serializer(), message)
     fun encode(message: LiveMetricsUpdate): ByteArray =
         encode(LiveMetricsUpdate.serializer(), message)
+    fun encode(message: LiveRequest): ByteArray = encode(LiveRequest.serializer(), message)
 
     fun decodeStart(bytes: ByteArray): LiveStart? = decode(LiveStart.serializer(), bytes)
     fun decodeAck(bytes: ByteArray): LiveAck? = decode(LiveAck.serializer(), bytes)
     fun decodeControl(bytes: ByteArray): LiveControl? = decode(LiveControl.serializer(), bytes)
     fun decodeMetrics(bytes: ByteArray): LiveMetricsUpdate? =
         decode(LiveMetricsUpdate.serializer(), bytes)
+    fun decodeRequest(bytes: ByteArray): LiveRequest? = decode(LiveRequest.serializer(), bytes)
 
     private fun <T> encode(serializer: KSerializer<T>, message: T): ByteArray =
         json.encodeToString(serializer, message).encodeToByteArray()

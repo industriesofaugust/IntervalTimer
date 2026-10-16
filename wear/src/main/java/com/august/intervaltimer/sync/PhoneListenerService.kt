@@ -19,8 +19,8 @@ import kotlinx.coroutines.runBlocking
 /**
  * Receives control messages from the phone: settings changes made in the
  * phone's Settings page, "play a test sequence" requests, and the live link
- * (a workout started on the phone, and its pauses and skips). Runs even when
- * the watch app is closed.
+ * (a workout started on the phone, its pauses and skips, and its answer to
+ * SYNC PHONE). Runs even when the watch app is closed.
  */
 class PhoneListenerService : WearableListenerService() {
 
@@ -29,6 +29,9 @@ class PhoneListenerService : WearableListenerService() {
         when (event.path) {
             LivePaths.START -> LiveLinkCodec.decodeStart(event.data)?.let {
                 WorkoutSession.onLiveStart(applicationContext, it, event.sourceNodeId)
+            }
+            LivePaths.ACK -> LiveLinkCodec.decodeAck(event.data)?.let {
+                WorkoutSession.onLiveAck(it, event.sourceNodeId)
             }
             LivePaths.CONTROL -> LiveLinkCodec.decodeControl(event.data)?.let {
                 WorkoutSession.onLiveControl(it)

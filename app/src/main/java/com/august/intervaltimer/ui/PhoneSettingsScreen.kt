@@ -50,6 +50,7 @@ import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.HealthConnectWriter
 import com.august.intervaltimer.data.ThemeMode
+import com.august.intervaltimer.data.WhenWatchJoins
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
 import com.august.intervaltimer.haptics.HapticsPlayer
@@ -174,6 +175,10 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setUseWatch(enabled: Boolean) {
         viewModelScope.launch { repository.setUseWatch(enabled) }
+    }
+
+    fun setWhenWatchJoins(choice: WhenWatchJoins) {
+        viewModelScope.launch { repository.setWhenWatchJoins(choice) }
     }
 }
 
@@ -409,6 +414,27 @@ fun PhoneSettingsScreen(
                     level = settings.vibrationLevel,
                     color = typeColor(IntervalType.WORK),
                     onLevelChange = viewModel::setVibrationLevel,
+                )
+            }
+            if (settings.useWatch) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "When watch joins".labelCase(),
+                    style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Phone cues while the watch runs the workout with you",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                SegmentedChoice(
+                    options = listOf("Quiet" to null, "Sound only" to null, "Both" to null),
+                    selectedIndex = settings.whenWatchJoins.ordinal,
+                    onSelect = { index ->
+                        viewModel.setWhenWatchJoins(WhenWatchJoins.entries[index])
+                    },
                 )
             }
             Spacer(Modifier.height(16.dp))

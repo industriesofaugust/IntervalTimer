@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.map
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** What the phone's own cues do while the watch has joined the workout. */
+enum class WhenWatchJoins { QUIET, SOUND_ONLY, BOTH }
+
 data class AppSettings(
     val soundEnabled: Boolean = true,
     val soundVolume: Int = 85,
@@ -24,6 +27,8 @@ data class AppSettings(
     val countdownFormat: CountdownFormat = CountdownFormat.SECONDS,
     /** Phone workouts also run on the watch (the live link). */
     val useWatch: Boolean = true,
+    /** Only applies while the watch is linked; otherwise the phone cues as usual. */
+    val whenWatchJoins: WhenWatchJoins = WhenWatchJoins.QUIET,
 )
 
 private val Context.dataStore by preferencesDataStore(name = "app_settings")
@@ -39,6 +44,7 @@ class AppSettingsRepository(private val context: Context) {
         val style = stringPreferencesKey("style")
         val countdownFormat = stringPreferencesKey("countdown_format")
         val useWatch = booleanPreferencesKey("use_watch")
+        val whenWatchJoins = stringPreferencesKey("when_watch_joins")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -57,6 +63,9 @@ class AppSettingsRepository(private val context: Context) {
                 ?.let { runCatching { CountdownFormat.valueOf(it) }.getOrNull() }
                 ?: CountdownFormat.SECONDS,
             useWatch = prefs[Keys.useWatch] ?: true,
+            whenWatchJoins = prefs[Keys.whenWatchJoins]
+                ?.let { runCatching { WhenWatchJoins.valueOf(it) }.getOrNull() }
+                ?: WhenWatchJoins.QUIET,
         )
     }
 
@@ -86,6 +95,10 @@ class AppSettingsRepository(private val context: Context) {
 
     suspend fun setUseWatch(enabled: Boolean) {
         context.dataStore.edit { it[Keys.useWatch] = enabled }
+    }
+
+    suspend fun setWhenWatchJoins(choice: WhenWatchJoins) {
+        context.dataStore.edit { it[Keys.whenWatchJoins] = choice.name }
     }
 
     suspend fun setThemeMode(mode: ThemeMode) {

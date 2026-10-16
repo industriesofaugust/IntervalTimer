@@ -4,21 +4,27 @@ import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.model.QuickBuildConfig
 import com.august.intervaltimer.model.buildSession
 import com.august.intervaltimer.sync.CreateTemplateCodec
+import com.august.intervaltimer.sync.LiveControl
+import com.august.intervaltimer.sync.LiveLinkCodec
+import com.august.intervaltimer.sync.LivePaths
 import com.august.intervaltimer.sync.ResultSyncCodec
 import com.august.intervaltimer.sync.SyncPaths
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataItem
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 /**
  * Receives data from the watch. Because this is a manifest-registered
  * service, the system starts the app in the background to deliver the data —
- * the phone app doesn't need to be open. Handles two kinds of messages:
- * finished workouts, and "save this template" requests.
+ * the phone app doesn't need to be open. Handles finished workouts, "save
+ * this template" requests, and a workout on the watch asking the phone to
+ * follow along.
  */
 class ResultListenerService : WearableListenerService() {
 
@@ -38,6 +44,41 @@ class ResultListenerService : WearableListenerService() {
                         discard(event.dataItem)
                     }
             }
+        }
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        when (event.path) {
+            LivePaths.REQUEST -> LiveLinkCodec.decodeRequest(event.data)?.let {
+                handleWatchRequest(WatchRequest(it, event.sourceNodeId))
+            }
+            LivePaths.CONTROL -> LiveLinkCodec.decodeControl(event.data)?.let {
+                handleWatchControl(it)
+            }
+        }
+    }
+
+    // On Home the app shows its own banner; anywhere else, or closed, it is a notification.
+    private fun handleWatchRequest(pending: WatchRequest) {
+        val app = application as TimerApp
+        val useWatch = runBlocking { app.settingsRepository.settings.first().useWatch }
+        if (!useWatch || pending.request.position.ended) return
+
+        PhoneLiveLink.offerWatchRequest(pending)
+        if (PhoneLiveLink.watchRequest.value != pending) return
+        if (!(PhoneLiveLink.appVisible && PhoneLiveLink.homeVisible)) {
+            WatchRequestNotification.show(this, pending)
+        }
+    }
+
+    // The watch workout is over, so there is nothing left to follow.
+    private fun handleWatchControl(control: LiveControl) {
+        val pending = PhoneLiveLink.watchRequest.value ?: return
+        val request = pending.request
+        if (control.linkId != request.linkId) return
+        if (control.ended || control.index >= request.intervals.size) {
+            PhoneLiveLink.clearWatchRequest()
+            WatchRequestNotification.cancel(this)
         }
     }
 
