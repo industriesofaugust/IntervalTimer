@@ -136,7 +136,8 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     fun retry() {
         val id = linkId ?: return
         val state = timer?.uiState?.value ?: return
-        if (_state.value != LinkState.NO_WATCH || state.phase == TimerPhase.FINISHED) return
+        val canRetry = _state.value == LinkState.NO_WATCH || _state.value == LinkState.LOST
+        if (!canRetry || state.phase == TimerPhase.FINISHED) return
 
         val start = LiveStart(
             linkId = id,

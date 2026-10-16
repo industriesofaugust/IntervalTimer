@@ -60,7 +60,7 @@ internal fun LinkTag(state: LinkState, onRetry: () -> Unit, modifier: Modifier =
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .then(if (state == LinkState.NO_WATCH) Modifier.clickable(onClick = onRetry) else Modifier)
+            .then(if (state == LinkState.NO_WATCH || state == LinkState.LOST) Modifier.clickable(onClick = onRetry) else Modifier)
             .padding(horizontal = 10.dp, vertical = 8.dp)
             // Read inside the layer, so the pulse never recomposes the screen.
             .graphicsLayer { alpha = if (state == LinkState.CONNECTING) pulse else 1f },
