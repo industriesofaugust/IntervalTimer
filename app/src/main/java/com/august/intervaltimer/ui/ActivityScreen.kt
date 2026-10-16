@@ -1,6 +1,7 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -16,29 +17,48 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
+import com.august.intervaltimer.data.HealthConnectWriter
 import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.PageTitle
@@ -46,8 +66,12 @@ import com.august.intervaltimer.ui.theme.SectionHeader
 import com.august.intervaltimer.ui.theme.captionStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -56,9 +80,35 @@ import java.time.temporal.ChronoUnit
 
 class ActivityViewModel(app: Application) : AndroidViewModel(app) {
     private val resultsRepository = (app as TimerApp).resultsRepository
+    private val healthConnect = HealthConnectWriter(app)
 
-    val results = resultsRepository.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    // Workouts the user deleted that can still be undone: hidden, not yet removed.
+    private val pendingIds = MutableStateFlow<Set<Long>>(emptySet())
+
+    val results = combine(resultsRepository.observeAll(), pendingIds) { all, pending ->
+        all.filter { it.id !in pending }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun hide(ids: Set<Long>) {
+        pendingIds.value += ids
+    }
+
+    /** Undo: the workouts come back and nothing was touched. */
+    fun restore(ids: Set<Long>) {
+        pendingIds.value -= ids
+    }
+
+    /** The same delete as the detail page: the workout here, then its records in Health Connect. */
+    fun deleteNow(ids: Set<Long>) {
+        viewModelScope.launch {
+            ids.forEach { id ->
+                val result = resultsRepository.getById(id)
+                resultsRepository.deleteById(id)
+                if (result != null) healthConnect.delete(result)
+            }
+            pendingIds.value -= ids
+        }
+    }
 }
 
 /** The span of time the first tile and the bar chart cover. */
@@ -86,6 +136,36 @@ fun ActivityScreen(
     viewModel: ActivityViewModel = viewModel(),
 ) {
     val results by viewModel.results.collectAsState()
+    var selected by remember { mutableStateOf(emptySet<Long>()) }
+    val selecting = selected.isNotEmpty()
+    val snackbarHost = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoLabel = "Undo".labelCase()
+
+    // Leaves selection mode before the app goes back a page.
+    BackHandler(enabled = selecting) { selected = emptySet() }
+
+    // Hides the workouts now; they are only deleted once the snackbar runs out or is dismissed.
+    fun deleteWithUndo(ids: Set<Long>) {
+        selected = selected - ids
+        viewModel.hide(ids)
+        val message = if (ids.size == 1) "Workout deleted" else "${ids.size} workouts deleted"
+        scope.launch {
+            // Dismissing an older snackbar finishes its delete.
+            snackbarHost.currentSnackbarData?.dismiss()
+            var undone = false
+            try {
+                val answer = withTimeoutOrNull(5_000) {
+                    snackbarHost.showSnackbar(message, undoLabel, duration = SnackbarDuration.Indefinite)
+                }
+                undone = answer == SnackbarResult.ActionPerformed
+            } finally {
+                // Also runs when the screen is left, so a pending delete is never forgotten.
+                if (undone) viewModel.restore(ids) else viewModel.deleteNow(ids)
+            }
+        }
+    }
+
     var rangeIndex by rememberSaveable { mutableIntStateOf(ActivityRange.WEEK.ordinal) }
     val range = ActivityRange.entries[rangeIndex]
 
@@ -120,85 +200,195 @@ fun ActivityScreen(
 
     val latest = results.maxByOrNull { it.completedAt }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding(),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Column {
-                Spacer(Modifier.height(12.dp))
-                PageTitle("Activity")
-                Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Tap to step through today, this week, this month.
-                    StatTile(
-                        title = range.label,
-                        figure = "${inRange.size}",
-                        footer = formatLongDuration(inRange.sumOf { it.totalSeconds }),
-                        modifier = Modifier.weight(1f),
-                        highlighted = true,
-                        pagerPosition = rangeIndex,
-                        pagerCount = ActivityRange.entries.size,
-                        onClick = { rangeIndex = (rangeIndex + 1) % ActivityRange.entries.size },
-                    )
-                    StatTile(
-                        title = "Days off",
-                        figure = latest?.let {
-                            "${ChronoUnit.DAYS.between(it.localDate(), today)}"
-                        } ?: "--",
-                        footer = latest?.let { formatDialDate(it.completedAt) } ?: "--",
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Spacer(Modifier.height(20.dp))
-                if (range == ActivityRange.TODAY && bars.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "No workouts today".labelCase(),
-                            style = captionStyle(),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    if (selecting) {
+                        SelectionHeader(
+                            count = selected.size,
+                            onDelete = { deleteWithUndo(selected) },
+                            onCancel = { selected = emptySet() },
+                        )
+                    } else {
+                        PageTitle("Activity")
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        // Tap to step through today, this week, this month.
+                        StatTile(
+                            title = range.label,
+                            figure = "${inRange.size}",
+                            footer = formatLongDuration(inRange.sumOf { it.totalSeconds }),
+                            modifier = Modifier.weight(1f),
+                            highlighted = true,
+                            pagerPosition = rangeIndex,
+                            pagerCount = ActivityRange.entries.size,
+                            onClick = { rangeIndex = (rangeIndex + 1) % ActivityRange.entries.size },
+                        )
+                        StatTile(
+                            title = "Days off",
+                            figure = latest?.let {
+                                "${ChronoUnit.DAYS.between(it.localDate(), today)}"
+                            } ?: "--",
+                            footer = latest?.let { formatDialDate(it.completedAt) } ?: "--",
+                            modifier = Modifier.weight(1f),
                         )
                     }
-                } else {
-                    ActivityBars(
-                        values = bars,
-                        todayIndex = todayBar,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp),
+                    Spacer(Modifier.height(20.dp))
+                    if (range == ActivityRange.TODAY && bars.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(72.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = "No workouts today".labelCase(),
+                                style = captionStyle(),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        ActivityBars(
+                            values = bars,
+                            todayIndex = todayBar,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(72.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    BarLabels(range = range, today = today, barCount = bars.size)
+                }
+            }
+
+            item {
+                SectionHeader("History", modifier = Modifier.padding(top = 8.dp))
+            }
+
+            if (results.isEmpty()) {
+                item {
+                    Text(
+                        text = "No workouts yet. Finish a session and it will appear here.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                BarLabels(range = range, today = today, barCount = bars.size)
+            } else {
+                // History always lists everything; the range only drives the tile and chart.
+                items(results, key = { it.id }) { result ->
+                    // Swiping only works in selection mode, so the pager keeps its swipes otherwise.
+                    SwipeToDeleteBox(
+                        enabled = selecting,
+                        onDelete = { deleteWithUndo(setOf(result.id)) },
+                        modifier = Modifier.animateItem(),
+                    ) {
+                        ResultCard(
+                            result = result,
+                            selecting = selecting,
+                            selected = result.id in selected,
+                            onClick = {
+                                if (selecting) selected = selected.toggled(result.id)
+                                else onOpenWorkout(result.id)
+                            },
+                            onLongClick = { if (!selecting) selected = setOf(result.id) },
+                        )
+                    }
+                }
             }
         }
+        SnackbarHost(
+            hostState = snackbarHost,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp),
+        )
+    }
+}
 
-        item {
-            SectionHeader("History", modifier = Modifier.padding(top = 8.dp))
-        }
+private fun Set<Long>.toggled(id: Long): Set<Long> = if (id in this) this - id else this + id
 
-        if (results.isEmpty()) {
-            item {
-                Text(
-                    text = "No workouts yet. Finish a session and it will appear here.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            // History always lists everything; the range only drives the tile and chart.
-            items(results, key = { it.id }) { result ->
-                ResultCard(result = result, onClick = { onOpenWorkout(result.id) })
-            }
+/** Takes the place of the page title in selection mode. */
+@Composable
+private fun SelectionHeader(count: Int, onDelete: () -> Unit, onCancel: () -> Unit) {
+    val dial = isDial()
+    val buttonStyle = if (dial) DialType.label else MaterialTheme.typography.labelLarge
+    val buttonPadding = PaddingValues(horizontal = 8.dp)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = "$count selected".labelCase(),
+            style = if (dial) DialType.title.copy(fontSize = 22.sp) else MaterialTheme.typography.titleLarge,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onDelete, contentPadding = buttonPadding) {
+            Text("Delete".labelCase(), style = buttonStyle, color = MaterialTheme.colorScheme.error)
         }
+        TextButton(onClick = onCancel, contentPadding = buttonPadding) {
+            Text("Cancel".labelCase(), style = buttonStyle)
+        }
+    }
+}
+
+/** Swipe left to delete, with a DELETE panel revealed behind the card. */
+@Composable
+private fun SwipeToDeleteBox(
+    enabled: Boolean,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val currentOnDelete by rememberUpdatedState(onDelete)
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                currentOnDelete()
+                true
+            } else {
+                false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = state,
+        modifier = modifier,
+        enableDismissFromStartToEnd = false,
+        gesturesEnabled = enabled,
+        backgroundContent = {
+            if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.error)
+                        .padding(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Delete".labelCase(),
+                        style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onError,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onError,
+                    )
+                }
+            }
+        },
+    ) {
+        content()
     }
 }
 

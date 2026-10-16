@@ -24,7 +24,8 @@ enum class WhenWatchJoins { QUIET, SOUND_ONLY, BOTH }
 
 data class AppSettings(
     val soundEnabled: Boolean = true,
-    val soundVolume: Int = 85,
+    /** 1 (quiet) to 5 (loudest). */
+    val soundLevel: Int = 3,
     val vibrate: Boolean = true,
     /** 1 (gentle) to 5 (strongest). */
     val vibrationLevel: Int = 3,
@@ -35,7 +36,22 @@ data class AppSettings(
     val watchLink: WatchLinkMode = WatchLinkMode.AUTO,
     /** Only applies while the watch is linked; otherwise the phone cues as usual. */
     val whenWatchJoins: WhenWatchJoins = WhenWatchJoins.QUIET,
-)
+) {
+    /** What the phone SoundPlayer takes, 0 to 100. */
+    val soundVolume: Int get() = soundVolumeFor(soundLevel)
+}
+
+// Steps 4 and 5 match the old MEDIUM (85) and HIGH (100), so nobody's cues get quieter.
+private val SOUND_VOLUMES = listOf(30, 50, 70, 85, 100)
+
+fun soundVolumeFor(level: Int): Int = SOUND_VOLUMES[level.coerceIn(1, 5) - 1]
+
+// LOW (50) becomes 2, MEDIUM (85) 4, HIGH (100) 5.
+internal fun levelFromOldVolume(volume: Int): Int = when {
+    volume <= 50 -> 2
+    volume <= 85 -> 4
+    else -> 5
+}
 
 private val Context.dataStore by preferencesDataStore(name = "app_settings")
 
@@ -43,6 +59,8 @@ class AppSettingsRepository(private val context: Context) {
 
     private object Keys {
         val soundEnabled = booleanPreferencesKey("sound_enabled")
+        val soundLevel = intPreferencesKey("sound_level")
+        // The old LOW / MEDIUM / HIGH volume (0-100); only read when the level has not been saved yet.
         val soundVolume = intPreferencesKey("sound_volume")
         val vibrate = booleanPreferencesKey("vibrate")
         val vibrationLevel = intPreferencesKey("vibration_level")
@@ -58,7 +76,8 @@ class AppSettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             soundEnabled = prefs[Keys.soundEnabled] ?: true,
-            soundVolume = prefs[Keys.soundVolume] ?: 85,
+            soundLevel = (prefs[Keys.soundLevel] ?: prefs[Keys.soundVolume]?.let(::levelFromOldVolume) ?: 3)
+                .coerceIn(1, 5),
             vibrate = prefs[Keys.vibrate] ?: true,
             vibrationLevel = (prefs[Keys.vibrationLevel] ?: 3).coerceIn(1, 5),
             themeMode = prefs[Keys.themeMode]
@@ -83,8 +102,11 @@ class AppSettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.soundEnabled] = enabled }
     }
 
-    suspend fun setSoundVolume(volume: Int) {
-        context.dataStore.edit { it[Keys.soundVolume] = volume.coerceIn(0, 100) }
+    suspend fun setSoundLevel(level: Int) {
+        context.dataStore.edit {
+            it[Keys.soundLevel] = level.coerceIn(1, 5)
+            it.remove(Keys.soundVolume)
+        }
     }
 
     suspend fun setVibrate(enabled: Boolean) {

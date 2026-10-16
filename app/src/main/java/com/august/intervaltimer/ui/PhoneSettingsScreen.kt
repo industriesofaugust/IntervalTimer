@@ -1,13 +1,13 @@
 package com.august.intervaltimer.ui
 
 import android.app.Application
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,15 +15,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
@@ -34,19 +34,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.august.intervaltimer.PrivacyPolicyActivity
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.ThemeMode
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WhenWatchJoins
+import com.august.intervaltimer.data.soundVolumeFor
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
 import com.august.intervaltimer.haptics.HapticsPlayer
@@ -78,20 +77,38 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+
 class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).settingsRepository
     private val haptics = HapticsPlayer(app)
     private var testJob: Job? = null
+    private var beepJob: Job? = null
 
     val settings = repository.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AppSettings())
 
     fun setSoundEnabled(enabled: Boolean) {
         viewModelScope.launch { repository.setSoundEnabled(enabled) }
+        if (enabled) previewBeep(settings.value.soundLevel)
     }
 
-    fun setSoundVolume(volume: Int) {
-        viewModelScope.launch { repository.setSoundVolume(volume) }
+    fun setSoundLevel(level: Int) {
+        viewModelScope.launch { repository.setSoundLevel(level) }
+        previewBeep(level)
+    }
+
+    /** Lets the user hear what they just picked. */
+    private fun previewBeep(level: Int) {
+        beepJob?.cancel()
+        beepJob = viewModelScope.launch {
+            val sound = SoundPlayer(soundVolumeFor(level))
+            try {
+                sound.workStart()
+                delay(600)
+            } finally {
+                sound.release()
+            }
+        }
     }
 
     fun setVibrate(enabled: Boolean) {
@@ -268,39 +285,6 @@ fun PhoneSettingsScreen(
         PageTitle("Settings")
         Spacer(Modifier.height(24.dp))
 
-        SectionHeader("Style")
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StyleOption(
-                label = "Dial",
-                segmented = true,
-                selected = settings.style == AppStyle.DIAL,
-                onClick = { viewModel.setStyle(AppStyle.DIAL) },
-                modifier = Modifier.weight(1f),
-            )
-            StyleOption(
-                label = "Minimal",
-                segmented = false,
-                selected = settings.style == AppStyle.MINIMAL,
-                onClick = { viewModel.setStyle(AppStyle.MINIMAL) },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Spacer(Modifier.height(24.dp))
-        SectionHeader("Countdown")
-        Spacer(Modifier.height(8.dp))
-        SegmentedChoice(
-            options = listOf("Seconds" to "90", "Minutes" to "1:30"),
-            selectedIndex = if (settings.countdownFormat == CountdownFormat.SECONDS) 0 else 1,
-            onSelect = { index ->
-                viewModel.setCountdownFormat(
-                    if (index == 0) CountdownFormat.SECONDS else CountdownFormat.MINUTES_SECONDS
-                )
-            },
-        )
-
-        Spacer(Modifier.height(24.dp))
         DevicesCard(
             watchLink = settings.watchLink,
             onWatchLinkChange = viewModel::setWatchLink,
@@ -311,84 +295,103 @@ fun PhoneSettingsScreen(
         SectionHeader("Phone cues")
         Spacer(Modifier.height(8.dp))
         SettingsCard {
-            ToggleRow(
-                title = "Sound cues",
+            CueRow(
+                title = "Sound",
                 checked = settings.soundEnabled,
                 onCheckedChange = viewModel::setSoundEnabled,
+                level = settings.soundLevel,
+                color = typeColor(IntervalType.REST),
+                onLevelChange = viewModel::setSoundLevel,
             )
-            if (settings.soundEnabled) {
-                Spacer(Modifier.height(8.dp))
-                SegmentedChoice(
-                    options = listOf("Low" to null, "Medium" to null, "High" to null),
-                    selectedIndex = when {
-                        settings.soundVolume <= 50 -> 0
-                        settings.soundVolume <= 85 -> 1
-                        else -> 2
-                    },
-                    onSelect = { index -> viewModel.setSoundVolume(listOf(50, 85, 100)[index]) },
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            ToggleRow(
+            Spacer(Modifier.height(8.dp))
+            CueRow(
                 title = "Vibration",
                 checked = settings.vibrate,
                 onCheckedChange = viewModel::setVibrate,
+                level = settings.vibrationLevel,
+                color = typeColor(IntervalType.WORK),
+                onLevelChange = viewModel::setVibrationLevel,
             )
-            if (settings.vibrate) {
-                LevelBar(
-                    level = settings.vibrationLevel,
-                    color = typeColor(IntervalType.WORK),
-                    onLevelChange = viewModel::setVibrationLevel,
-                )
-            }
             if (settings.watchLink != WatchLinkMode.OFF) {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "When watch joins".labelCase(),
-                    style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "Phone cues while the watch runs the workout with you",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                SegmentedChoice(
-                    options = listOf("Quiet" to null, "Sound only" to null, "Both" to null),
+                LabeledChoice(
+                    label = "When watch joins",
+                    options = listOf("Quiet", "Sound", "Both"),
                     selectedIndex = settings.whenWatchJoins.ordinal,
                     onSelect = { index ->
                         viewModel.setWhenWatchJoins(WhenWatchJoins.entries[index])
                     },
+                    caption = "Phone cues while the watch runs the workout with you",
+                    labelOnTop = true,
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
             TestButton("Test cues", onClick = viewModel::testCues)
         }
 
         HealthCard()
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader("Theme")
+        SectionHeader("Appearance")
         Spacer(Modifier.height(8.dp))
-        SegmentedChoice(
-            options = listOf("System" to null, "Light" to null, "Dark" to null),
-            selectedIndex = settings.themeMode.ordinal,
-            onSelect = { index -> viewModel.setThemeMode(ThemeMode.entries[index]) },
-        )
+        SettingsCard {
+            LabeledChoice(
+                label = "Style",
+                options = listOf("Dial", "Minimal"),
+                selectedIndex = if (settings.style == AppStyle.DIAL) 0 else 1,
+                onSelect = { index ->
+                    viewModel.setStyle(if (index == 0) AppStyle.DIAL else AppStyle.MINIMAL)
+                },
+            )
+            Spacer(Modifier.height(16.dp))
+            LabeledChoice(
+                label = "Countdown",
+                options = listOf("90", "1:30"),
+                selectedIndex = if (settings.countdownFormat == CountdownFormat.SECONDS) 0 else 1,
+                onSelect = { index ->
+                    viewModel.setCountdownFormat(
+                        if (index == 0) CountdownFormat.SECONDS else CountdownFormat.MINUTES_SECONDS
+                    )
+                },
+            )
+            Spacer(Modifier.height(16.dp))
+            LabeledChoice(
+                label = "Theme",
+                options = listOf("System", "Light", "Dark"),
+                selectedIndex = settings.themeMode.ordinal,
+                onSelect = { index -> viewModel.setThemeMode(ThemeMode.entries[index]) },
+            )
+        }
 
         Spacer(Modifier.height(24.dp))
         SectionHeader("About")
-        val context = LocalContext.current
-        val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
         Spacer(Modifier.height(8.dp))
+        AboutCard()
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun AboutCard() {
+    val context = LocalContext.current
+    val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+    SettingsCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "Interval Timer $version".labelCase(),
+                style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            SmallTextButton(
+                label = "Privacy policy",
+                onClick = { context.startActivity(Intent(context, PrivacyPolicyActivity::class.java)) },
+            )
+        }
         Text(
-            text = "Interval Timer $version. Your templates and workouts live on your devices: " +
-                "no account, no server. Health Connect sharing is optional.",
-            style = MaterialTheme.typography.bodyMedium,
+            text = "No account, no server: your data stays on your devices.",
+            style = captionStyle(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -405,28 +408,45 @@ internal fun SettingsCard(content: @Composable () -> Unit) {
     }
 }
 
+/** A label, a switch, and (when on) the five-step bar between them. */
 @Composable
-internal fun ToggleRow(
+internal fun CueRow(
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    level: Int,
+    color: Color,
+    onLevelChange: (Int) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = title.labelCase(),
             style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.width(LabelWidth),
         )
+        if (checked) {
+            LevelBar(
+                level = level,
+                color = color,
+                onLevelChange = onLevelChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 12.dp),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
+/** A small button for the actions at the foot of a card, like TEST CUES. */
 @Composable
-internal fun TestButton(label: String, onClick: () -> Unit) {
-    OutlinedButton(
+internal fun SmallTextButton(label: String, onClick: () -> Unit, enabled: Boolean = true) {
+    TextButton(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 8.dp),
     ) {
         Text(
             text = label.labelCase(),
@@ -435,10 +455,22 @@ internal fun TestButton(label: String, onClick: () -> Unit) {
     }
 }
 
+@Composable
+internal fun TestButton(label: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        SmallTextButton(label, onClick)
+    }
+}
+
 /** Five tappable steps, filled up to the current level. Matches the bar on the watch. */
 @Composable
-internal fun LevelBar(level: Int, color: Color, onLevelChange: (Int) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+internal fun LevelBar(
+    level: Int,
+    color: Color,
+    onLevelChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (step in 1..5) {
             Box(
                 modifier = Modifier
@@ -458,15 +490,54 @@ internal fun LevelBar(level: Int, color: Color, onLevelChange: (Int) -> Unit) {
     }
 }
 
+/** Width of the label column, so the controls of different rows line up. */
+internal val LabelWidth = 96.dp
+
+/**
+ * A label with a segmented choice beside it (or above it, for a long label)
+ * and an optional one-line caption explaining the choice.
+ */
+@Composable
+internal fun LabeledChoice(
+    label: String,
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    caption: String? = null,
+    labelOnTop: Boolean = false,
+) {
+    val labelStyle = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium
+    val choices = options.map { it to null }
+    if (labelOnTop) {
+        Text(text = label.labelCase(), style = labelStyle)
+        Spacer(Modifier.height(8.dp))
+        SegmentedChoice(choices, selectedIndex, onSelect)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = label.labelCase(), style = labelStyle, modifier = Modifier.width(LabelWidth))
+            SegmentedChoice(choices, selectedIndex, onSelect, Modifier.weight(1f))
+        }
+    }
+    if (caption != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = caption,
+            style = captionStyle(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** A row of choices where one is selected, like a tab strip. */
 @Composable
 internal fun SegmentedChoice(
     options: List<Pair<String, String?>>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -499,71 +570,6 @@ internal fun SegmentedChoice(
                     )
                 }
             }
-        }
-    }
-}
-
-/** One of the two style choices, with a small picture of its ring. */
-@Composable
-private fun StyleOption(
-    label: String,
-    segmented: Boolean,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val work = typeColor(IntervalType.WORK)
-    val rest = typeColor(IntervalType.REST)
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
-        modifier = modifier,
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Canvas(modifier = Modifier.size(44.dp)) {
-                val stroke = 6.dp.toPx()
-                val arcSize = Size(size.width - stroke, size.height - stroke)
-                val topLeft = Offset(stroke / 2f, stroke / 2f)
-                if (segmented) {
-                    // Five arcs with gaps: work, rest, work, rest, work.
-                    val sweeps = listOf(88f, 44f, 88f, 44f, 76f)
-                    var start = -88f
-                    sweeps.forEachIndexed { index, sweep ->
-                        drawArc(
-                            color = if (index % 2 == 0) work else rest,
-                            startAngle = start,
-                            sweepAngle = sweep,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = Stroke(stroke),
-                        )
-                        start += sweep + 4f
-                    }
-                } else {
-                    drawArc(
-                        color = work,
-                        startAngle = -90f,
-                        sweepAngle = 270f,
-                        useCenter = false,
-                        topLeft = topLeft,
-                        size = arcSize,
-                        style = Stroke(stroke),
-                    )
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = label.labelCase(),
-                style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-                color = if (selected) MaterialTheme.colorScheme.onSurface
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

@@ -4,20 +4,17 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.health.maxHeartRateFor
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.ui.SettingsCard
+import com.august.intervaltimer.ui.SmallTextButton
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.SectionHeader
 import com.august.intervaltimer.ui.theme.captionStyle
@@ -48,25 +46,25 @@ import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.ui.theme.typeColor
 
+
 private enum class Confirm { STOP_SHARING, CLEAN_UP }
 
 /**
- * The Health Connect card (only where Health Connect exists) and, under it,
- * the "You" card whose age feeds the heart-rate zones.
+ * The HEALTH group: Health Connect sharing (only where Health Connect
+ * exists) and the age that feeds the heart-rate zones.
  */
 @Composable
 fun HealthCard(viewModel: HealthViewModel = viewModel()) {
-    if (viewModel.available) {
-        Spacer(Modifier.height(24.dp))
-        SectionHeader("Health Connect")
-        Spacer(Modifier.height(8.dp))
-        SettingsCard { HealthConnectContent(viewModel) }
-    }
-
     Spacer(Modifier.height(24.dp))
-    SectionHeader("You")
+    SectionHeader("Health")
     Spacer(Modifier.height(8.dp))
-    SettingsCard { AgeContent(viewModel) }
+    SettingsCard {
+        if (viewModel.available) {
+            HealthConnectContent(viewModel)
+            Spacer(Modifier.height(16.dp))
+        }
+        AgeContent(viewModel)
+    }
 }
 
 @Composable
@@ -87,34 +85,14 @@ private fun HealthConnectContent(viewModel: HealthViewModel) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                text = (if (viewModel.linked) "Linked" else "Not linked").labelCase(),
-                style = labelStyle,
-                color = if (viewModel.linked) typeColor(IntervalType.REST)
-                else MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = if (viewModel.linked) {
-                    "Workouts · Heart rate · Steps · Calories".labelCase()
-                } else {
-                    "Save workouts where other fitness apps can see them"
-                },
-                style = if (viewModel.linked) captionStyle() else MaterialTheme.typography.bodyMedium,
-                color = muted,
-            )
-            if (viewModel.linked) {
-                Text(
-                    text = (if (viewModel.canReadResting) "Resting HR read" else "Resting HR not read")
-                        .labelCase(),
-                    style = captionStyle(),
-                    color = muted,
-                )
-            }
-        }
+        Text(
+            text = (if (viewModel.linked) "Linked" else "Not linked").labelCase(),
+            style = labelStyle,
+            color = if (viewModel.linked) typeColor(IntervalType.REST)
+            else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
         if (!viewModel.linked) {
-            Spacer(Modifier.width(12.dp))
             Button(onClick = { permissionLauncher.launch(viewModel.permissions) }) {
                 Text("Link".labelCase())
             }
@@ -122,34 +100,38 @@ private fun HealthConnectContent(viewModel: HealthViewModel) {
     }
 
     if (!viewModel.linked) {
+        Text(
+            text = "Save workouts where other fitness apps can see them",
+            style = captionStyle(),
+            color = muted,
+        )
         viewModel.message?.let { MessageLine(it) }
         return
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(4.dp))
     Text(
         text = savedText(status.savedCount, status.lastSavedAt).labelCase(),
         style = captionStyle(),
         color = muted,
     )
+    val shared = "Shares workouts, HR, steps, kcal" + if (viewModel.canReadResting) ", resting HR" else ""
+    Text(text = shared, style = captionStyle(), color = muted)
 
     status.lastError?.let { error ->
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = error,
-                style = MaterialTheme.typography.bodyMedium,
+                style = captionStyle(),
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(12.dp))
-            Button(onClick = viewModel::retry, enabled = progress == null) {
-                Text("Retry".labelCase())
-            }
+            SmallTextButton("Retry", onClick = viewModel::retry, enabled = progress == null)
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(8.dp))
     if (progress != null) {
         val counted = if (progress.total > 0) " ${progress.done}/${progress.total}" else ""
         Text(text = (progress.text + counted).labelCase(), style = captionStyle(), color = muted)
@@ -166,32 +148,13 @@ private fun HealthConnectContent(viewModel: HealthViewModel) {
     }
 
     viewModel.message?.let { MessageLine(it) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        HealthButton(
-            label = "Manage permissions",
-            onClick = { openManagePermissions(context) },
-            modifier = Modifier.weight(1f),
-        )
-        HealthButton(
-            label = "Stop sharing",
-            onClick = { confirm = Confirm.STOP_SHARING },
-            modifier = Modifier.weight(1f),
-        )
-    }
-    if (!status.cleanedUp) {
-        Spacer(Modifier.height(8.dp))
-        HealthButton(
-            label = "Clean up",
-            onClick = { confirm = Confirm.CLEAN_UP },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "Older versions saved workouts that cannot be updated or deleted. " +
-                "Clean up removes them and saves every workout again.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = muted,
-        )
+    Row {
+        SmallTextButton("Manage", onClick = { openManagePermissions(context) })
+        SmallTextButton("Stop sharing", onClick = { confirm = Confirm.STOP_SHARING })
+        // Only for workouts saved by older versions.
+        if (!status.cleanedUp) {
+            SmallTextButton("Clean up", onClick = { confirm = Confirm.CLEAN_UP })
+        }
     }
 
     when (confirm) {
@@ -205,7 +168,8 @@ private fun HealthConnectContent(viewModel: HealthViewModel) {
         )
         Confirm.CLEAN_UP -> ConfirmDialog(
             title = "Clean up?",
-            text = "This deletes every workout record this app saved to Health Connect in the " +
+            text = "Older versions saved workouts that cannot be updated or deleted. This " +
+                "deletes every workout record this app saved to Health Connect in the " +
                 "time range of your history, then saves your workouts again. Records from other " +
                 "apps are not touched.",
             confirmLabel = "Clean up",
@@ -218,7 +182,6 @@ private fun HealthConnectContent(viewModel: HealthViewModel) {
 
 @Composable
 private fun AgeContent(viewModel: HealthViewModel) {
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = "Age".labelCase(),
@@ -235,37 +198,27 @@ private fun AgeContent(viewModel: HealthViewModel) {
             modifier = Modifier.width(96.dp),
         )
     }
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(4.dp))
     val max = maxHeartRateFor(viewModel.ageText.toIntOrNull(), highestSeen = null)
     Text(
         text = if (max != null) {
-            "Max heart rate $max (220 minus your age). Used for the zones on a workout."
+            "Max heart rate $max (220 minus age), for workout zones"
         } else {
-            "Optional. Without it, zones use the highest heart rate you have recorded."
+            "Optional: zones use your highest heart rate"
         },
-        style = MaterialTheme.typography.bodyMedium,
-        color = muted,
+        style = captionStyle(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
 @Composable
 private fun MessageLine(text: String) {
+    Spacer(Modifier.height(8.dp))
     Text(
         text = text,
-        style = MaterialTheme.typography.bodyMedium,
+        style = captionStyle(),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    Spacer(Modifier.height(12.dp))
-}
-
-@Composable
-private fun HealthButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(12.dp)) {
-        Text(
-            text = label.labelCase(),
-            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-        )
-    }
 }
 
 @Composable

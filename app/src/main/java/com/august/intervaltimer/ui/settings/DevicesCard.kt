@@ -7,10 +7,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,11 +32,11 @@ import com.august.intervaltimer.data.WatchDeviceState
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.sync.WatchInfo
-import com.august.intervaltimer.ui.LevelBar
-import com.august.intervaltimer.ui.SegmentedChoice
+import com.august.intervaltimer.ui.CueRow
+import com.august.intervaltimer.ui.LabeledChoice
 import com.august.intervaltimer.ui.SettingsCard
+import com.august.intervaltimer.ui.SmallTextButton
 import com.august.intervaltimer.ui.TestButton
-import com.august.intervaltimer.ui.ToggleRow
 import com.august.intervaltimer.ui.WatchCuesViewModel
 import com.august.intervaltimer.ui.rememberWatchDevice
 import com.august.intervaltimer.ui.theme.DialType
@@ -48,9 +49,9 @@ import com.august.intervaltimer.ui.theme.typeColor
 import kotlinx.coroutines.delay
 
 /**
- * Settings card for connected devices. Today that is the watch: whether it
- * is connected, which version it runs, how fresh its templates are, how the
- * phone and watch link up for workouts, and the watch's own cue settings.
+ * The WATCH group in Settings: whether the watch is connected, which version
+ * it runs, how fresh its templates are, how the phone and watch link up for
+ * workouts, and the watch's own cue settings.
  */
 @Composable
 fun DevicesCard(
@@ -60,7 +61,7 @@ fun DevicesCard(
 ) {
     val watch = rememberWatchDevice()
 
-    SectionHeader("Devices")
+    SectionHeader("Watch")
     Spacer(Modifier.height(8.dp))
     SettingsCard {
         WatchRow(watch)
@@ -68,74 +69,69 @@ fun DevicesCard(
             WatchVersionsAndTemplates(watch)
         }
         if (watch.connection != WatchConnection.CONNECTED) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             TroubleshootingSteps(watch.connection)
         }
 
-        Spacer(Modifier.height(20.dp))
-        Text(
-            text = "Watch link".labelCase(),
-            style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
-        )
-        Spacer(Modifier.height(8.dp))
-        SegmentedChoice(
-            options = listOf("Auto" to null, "Manual" to null, "Off" to null),
+        Spacer(Modifier.height(16.dp))
+        LabeledChoice(
+            label = "Link",
+            options = listOf("Auto", "Manual", "Off"),
             selectedIndex = watchLink.ordinal,
             onSelect = { index -> onWatchLinkChange(WatchLinkMode.entries[index]) },
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = when (watchLink) {
-                WatchLinkMode.AUTO -> "The watch joins every workout you start"
-                WatchLinkMode.MANUAL -> "Workouts start alone; tap Link watch to join"
+            caption = when (watchLink) {
+                WatchLinkMode.AUTO -> "The watch joins every workout"
+                WatchLinkMode.MANUAL -> "Tap Link watch on the timer to join"
                 WatchLinkMode.OFF -> "Workouts never link to the watch"
             },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
         Spacer(Modifier.height(16.dp))
         if (!watchCues.loaded) {
             Text(
                 text = "Open Interval Timer on your watch once to load its settings here.",
-                style = MaterialTheme.typography.bodyMedium,
+                style = captionStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            ToggleRow(
+            CueRow(
                 title = "Vibration",
                 checked = watchCues.cues.vibrationEnabled,
                 onCheckedChange = { on -> watchCues.update { it.copy(vibrationEnabled = on) } },
+                level = watchCues.cues.vibrationLevel,
+                color = typeColor(IntervalType.WORK),
+                onLevelChange = { level -> watchCues.update { it.copy(vibrationLevel = level) } },
             )
-            if (watchCues.cues.vibrationEnabled) {
-                LevelBar(
-                    level = watchCues.cues.vibrationLevel,
-                    color = typeColor(IntervalType.WORK),
-                    onLevelChange = { level -> watchCues.update { it.copy(vibrationLevel = level) } },
-                )
-            }
-            Spacer(Modifier.height(16.dp))
-            ToggleRow(
+            Spacer(Modifier.height(8.dp))
+            CueRow(
                 title = "Sound",
                 checked = watchCues.cues.soundEnabled,
                 onCheckedChange = { on -> watchCues.update { it.copy(soundEnabled = on) } },
+                level = watchCues.cues.soundLevel,
+                color = typeColor(IntervalType.REST),
+                onLevelChange = { level -> watchCues.update { it.copy(soundLevel = level) } },
             )
-            if (watchCues.cues.soundEnabled) {
-                LevelBar(
-                    level = watchCues.cues.soundLevel,
-                    color = typeColor(IntervalType.REST),
-                    onLevelChange = { level -> watchCues.update { it.copy(soundLevel = level) } },
-                )
-            }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
         TestButton("Test on watch", onClick = watchCues::testOnWatch)
     }
 }
 
-/** The watch's name and how well the phone can reach it. */
+/** A status dot, the watch's name and how well the phone can reach it. */
 @Composable
 private fun WatchRow(watch: WatchDeviceState) {
+    val color = when (watch.connection) {
+        WatchConnection.CONNECTED -> typeColor(IntervalType.REST)
+        WatchConnection.NOT_REACHABLE, WatchConnection.APP_MISSING -> typeColor(IntervalType.WORK)
+        WatchConnection.NO_WATCH -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(
+            Modifier
+                .size(8.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 text = watch.name ?: "Watch",
@@ -151,27 +147,17 @@ private fun WatchRow(watch: WatchDeviceState) {
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
-        StatusChip(watch.connection)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = connectionLabel(watch.connection).labelCase(),
+            style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+            color = color,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(color.copy(alpha = 0.14f))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
-}
-
-@Composable
-private fun StatusChip(connection: WatchConnection) {
-    val color = when (connection) {
-        WatchConnection.CONNECTED -> typeColor(IntervalType.REST)
-        WatchConnection.NOT_REACHABLE, WatchConnection.APP_MISSING -> typeColor(IntervalType.WORK)
-        WatchConnection.NO_WATCH -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Text(
-        text = connectionLabel(connection).labelCase(),
-        style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-        color = color,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(color.copy(alpha = 0.14f))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-    )
 }
 
 /** App versions, a warning if they differ, and the watch's template count. */
@@ -180,24 +166,23 @@ private fun WatchVersionsAndTemplates(watch: WatchDeviceState) {
     val info = watch.info
     if (info == null) {
         if (watch.connection == WatchConnection.CONNECTED) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "Open Interval Timer on the watch to see its version and templates.",
-                style = MaterialTheme.typography.bodyMedium,
+                style = captionStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         return
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(8.dp))
     Text(
         text = "Phone ${watch.phoneVersionName} · Watch ${info.appVersionName}".labelCase(),
         style = captionStyle(),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     if (watch.versionMismatch) {
-        Spacer(Modifier.height(4.dp))
         Text(
             text = "Install the same version on both: run the install script",
             style = captionStyle(),
@@ -213,7 +198,6 @@ private fun TemplatesRow(info: WatchInfo, canSync: Boolean) {
     val syncing by device.syncing.collectAsState()
     val now = rememberNow()
 
-    Spacer(Modifier.height(8.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = templatesLine(info, now).labelCase(),
@@ -221,25 +205,19 @@ private fun TemplatesRow(info: WatchInfo, canSync: Boolean) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.width(12.dp))
-        OutlinedButton(
+        SmallTextButton(
+            label = if (syncing) "Sent…" else "Sync now",
             onClick = device::syncNow,
             enabled = canSync && !syncing,
-            shape = RoundedCornerShape(12.dp),
-        ) {
-            Text(
-                text = (if (syncing) "Sent…" else "Sync now").labelCase(),
-                style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-            )
-        }
+        )
     }
 }
 
-/** "5 templates on watch · synced 2 min ago" */
+/** "5 templates · synced 2 min ago" */
 private fun templatesLine(info: WatchInfo, now: Long): String {
     val count = if (info.templateCount == 1) "1 template" else "${info.templateCount} templates"
-    val receivedAt = info.templatesReceivedAtEpochMillis ?: return "$count on watch"
-    return "$count on watch · synced ${timeAgo(now, receivedAt)}"
+    val receivedAt = info.templatesReceivedAtEpochMillis ?: return count
+    return "$count · synced ${timeAgo(now, receivedAt)}"
 }
 
 /** "just now", "2 min ago", "3 h ago", "2 d ago". */

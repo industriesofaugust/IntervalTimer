@@ -1,7 +1,17 @@
 package com.august.intervaltimer.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,21 +59,61 @@ fun formatDialDateTime(completedAt: Long): String =
 /** "SUN 11 OCT" */
 fun formatDialDate(completedAt: Long): String = zoned(completedAt).format(dialDateFormat).uppercase()
 
+/** The round check at the start of a card in selection mode. */
 @Composable
-fun ResultCard(result: WorkoutResultEntity, onClick: (() -> Unit)? = null) {
+private fun SelectMark(selected: Boolean) {
+    val primary = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .size(22.dp)
+            .background(if (selected) primary else Color.Transparent, CircleShape)
+            .border(1.5.dp, if (selected) primary else MaterialTheme.colorScheme.outline, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = "Selected",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
+/** Long-press starts selecting; [selecting] and [selected] show the check state. */
+@Composable
+fun ResultCard(
+    result: WorkoutResultEntity,
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
+    selecting: Boolean = false,
+    selected: Boolean = false,
+) {
     val dial = isDial()
     val intervals = result.intervals()
     val completed = result.completedIntervals
+    val shape = RoundedCornerShape(20.dp)
 
     Surface(
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        shape = RoundedCornerShape(20.dp),
+        shape = shape,
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth(),
+        border = if (selected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .combinedClickable(
+                enabled = onClick != null || onLongClick != null,
+                onClick = onClick ?: {},
+                onLongClick = onLongClick,
+            ),
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selecting) {
+                    SelectMark(selected)
+                    Spacer(Modifier.width(12.dp))
+                }
                 Text(
                     text = result.templateName ?: "Workout",
                     style = nameStyle(),
