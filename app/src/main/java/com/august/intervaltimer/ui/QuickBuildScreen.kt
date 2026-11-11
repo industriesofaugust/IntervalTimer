@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -19,8 +20,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -58,6 +63,7 @@ import com.august.intervaltimer.ui.theme.TealLight
 @Composable
 fun QuickBuildScreen(
     onStart: (List<Interval>) -> Unit,
+    onBack: () -> Unit = {},
     onCustomize: (rounds: Int, workSeconds: Int, restSeconds: Int) -> Unit = { _, _, _ -> },
 ) {
     var rounds by rememberSaveable { mutableIntStateOf(8) }
@@ -78,7 +84,10 @@ fun QuickBuildScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp),
     ) {
-        Spacer(Modifier.height(12.dp))
+        // Pulled left so the arrow lines up with the page title under it.
+        IconButton(onClick = onBack, modifier = Modifier.offset(x = (-12).dp)) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+        }
         PageTitle("Quick session")
         Spacer(Modifier.height(6.dp))
         Text(

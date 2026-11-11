@@ -30,11 +30,12 @@ class WatchDeviceTest {
     }
 
     @Test
-    fun `versions differ when the version codes differ`() {
-        val info = com.august.intervaltimer.sync.WatchInfo("0.15", 15, 3)
+    fun `versions differ when the version names differ`() {
+        val info = com.august.intervaltimer.sync.WatchInfo("1.0.0", 181, 3)
 
-        assertTrue(WatchDeviceState(info = info, phoneVersionCode = 16).versionMismatch)
-        assertFalse(WatchDeviceState(info = info, phoneVersionCode = 15).versionMismatch)
-        assertFalse(WatchDeviceState(phoneVersionCode = 15).versionMismatch)
+        assertTrue(WatchDeviceState(info = info, phoneVersionName = "1.0.1").versionMismatch)
+        // The codes always differ (Play needs a different one for the watch); the names decide.
+        assertFalse(WatchDeviceState(info = info, phoneVersionName = "1.0.0", phoneVersionCode = 180).versionMismatch)
+        assertFalse(WatchDeviceState(phoneVersionName = "1.0.0").versionMismatch)
     }
 }

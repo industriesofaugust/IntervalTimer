@@ -26,6 +26,8 @@ data class AppSettings(
     val soundEnabled: Boolean = true,
     /** 1 (quiet) to 5 (loudest). */
     val soundLevel: Int = 3,
+    /** Speaks each interval's name as it starts, at the sound level above. */
+    val voiceEnabled: Boolean = false,
     val vibrate: Boolean = true,
     /** 1 (gentle) to 5 (strongest). */
     val vibrationLevel: Int = 3,
@@ -62,6 +64,7 @@ class AppSettingsRepository(private val context: Context) {
         val soundLevel = intPreferencesKey("sound_level")
         // The old LOW / MEDIUM / HIGH volume (0-100); only read when the level has not been saved yet.
         val soundVolume = intPreferencesKey("sound_volume")
+        val voiceEnabled = booleanPreferencesKey("voice_enabled")
         val vibrate = booleanPreferencesKey("vibrate")
         val vibrationLevel = intPreferencesKey("vibration_level")
         val themeMode = stringPreferencesKey("theme_mode")
@@ -78,6 +81,7 @@ class AppSettingsRepository(private val context: Context) {
             soundEnabled = prefs[Keys.soundEnabled] ?: true,
             soundLevel = (prefs[Keys.soundLevel] ?: prefs[Keys.soundVolume]?.let(::levelFromOldVolume) ?: 3)
                 .coerceIn(1, 5),
+            voiceEnabled = prefs[Keys.voiceEnabled] ?: false,
             vibrate = prefs[Keys.vibrate] ?: true,
             vibrationLevel = (prefs[Keys.vibrationLevel] ?: 3).coerceIn(1, 5),
             themeMode = prefs[Keys.themeMode]
@@ -107,6 +111,10 @@ class AppSettingsRepository(private val context: Context) {
             it[Keys.soundLevel] = level.coerceIn(1, 5)
             it.remove(Keys.soundVolume)
         }
+    }
+
+    suspend fun setVoiceEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.voiceEnabled] = enabled }
     }
 
     suspend fun setVibrate(enabled: Boolean) {

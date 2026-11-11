@@ -17,7 +17,6 @@ import com.august.intervaltimer.sync.toLiveControl
 import com.august.intervaltimer.sync.toSyncedIntervals
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
-import com.august.intervaltimer.timer.TimerViewModel
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Wearable
@@ -36,6 +35,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
+/** What the link needs from the phone's timer: read it, start it, and move it. */
+interface LinkedTimer {
+    val uiState: StateFlow<TimerUiState>
+    fun start(intervals: List<Interval>)
+    fun applyLiveControl(control: LiveControl, nowEpochMillis: Long)
+}
+
 /** The watch asked the phone to follow its workout, and which watch asked. */
 data class WatchRequest(val request: LiveRequest, val nodeId: String)
 
@@ -48,13 +54,12 @@ private const val STALE_MILLIS = 20_000L
 /**
  * The phone's end of the live link: a phone workout also runs on the watch.
  *
- * It lives for the whole app process and listens only while the app is in
- * use, which is enough because the phone timer keeps the screen on. Every
- * message is best effort: if the watch is away or sending fails, the phone
- * workout simply carries on alone.
+ * It lives for the whole app process, which stays alive during a workout
+ * (see PhoneWorkoutService). Every message is best effort: if the watch is
+ * away or sending fails, the phone workout simply carries on alone.
  *
- * The screen calls [sendState] and [sendEnd] for things the user does on the
- * phone. Messages from the watch go straight to the timer without passing
+ * PhoneWorkout calls [sendState] and [sendEnd] for things the user does on
+ * the phone. Messages from the watch go straight to the timer without passing
  * those, so the two devices never echo each other.
  */
 object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
@@ -125,7 +130,7 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
     var homeVisible = false
 
     private var appContext: Context? = null
-    private var timer: TimerViewModel? = null
+    private var timer: LinkedTimer? = null
     private var linkId: String? = null
     private var sessionName = ""
     private var intervals: List<SyncedInterval> = emptyList()
@@ -142,7 +147,7 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
      */
     fun begin(
         context: Context,
-        timer: TimerViewModel,
+        timer: LinkedTimer,
         name: String?,
         intervals: List<Interval>,
         mode: WatchLinkMode,
@@ -194,7 +199,7 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
      * timer at the watch's position, link with the watch's linkId and say yes.
  * Returns false if the workout is already over, and nothing was started.
      */
-    fun follow(context: Context, timer: TimerViewModel, pending: WatchRequest): Boolean {
+    fun follow(context: Context, timer: LinkedTimer, pending: WatchRequest): Boolean {
         val request = pending.request
         end()
         clearWatchRequest()
@@ -315,7 +320,7 @@ object PhoneLiveLink : MessageClient.OnMessageReceivedListener {
 
     private fun attach(
         context: Context,
-        timer: TimerViewModel,
+        timer: LinkedTimer,
         id: String,
         name: String,
         intervals: List<SyncedInterval>,

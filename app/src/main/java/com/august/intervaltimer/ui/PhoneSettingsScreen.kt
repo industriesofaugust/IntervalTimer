@@ -48,8 +48,14 @@ import com.august.intervaltimer.data.WhenWatchJoins
 import com.august.intervaltimer.data.soundVolumeFor
 import com.august.intervaltimer.design.AppStyle
 import com.august.intervaltimer.design.CountdownFormat
+import com.august.intervaltimer.data.WatchConnection
 import com.august.intervaltimer.haptics.HapticsPlayer
+import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.sync.LinkState
+import com.august.intervaltimer.timer.TimerPhase
+import com.august.intervaltimer.timer.TimerUiState
+import com.august.intervaltimer.workout.CuePlayer
 import com.august.intervaltimer.sync.SyncPaths
 import com.august.intervaltimer.sync.WatchCueSettings
 import com.august.intervaltimer.sync.WatchCueSettingsCodec
@@ -81,6 +87,7 @@ import kotlinx.coroutines.tasks.await
 class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).settingsRepository
     private val haptics = HapticsPlayer(app)
+    private val cuePlayer = CuePlayer(app)
     private var testJob: Job? = null
     private var beepJob: Job? = null
 
@@ -122,37 +129,62 @@ class PhoneSettingsViewModel(app: Application) : AndroidViewModel(app) {
         haptics.play(TimerCue.WORK_START, level)
     }
 
-    /** Plays 3-2-1, work, rest, finish with the current phone settings. */
+    fun setVoiceEnabled(enabled: Boolean) {
+        viewModelScope.launch { repository.setVoiceEnabled(enabled) }
+        // Let the user hear the voice they just switched on.
+        if (enabled) {
+            testJob?.cancel()
+            testJob = viewModelScope.launch {
+                val current = settings.value.copy(voiceEnabled = true, soundEnabled = false, vibrate = false)
+                try {
+                    cuePlayer.play(TimerCue.REST_START, sampleState(1), current, LinkState.OFF)
+                    delay(4_000)
+                } finally {
+                    cuePlayer.release()
+                }
+            }
+        }
+    }
+
+    /** Plays 3-2-1, work, rest, finish exactly as a workout would, with the current settings. */
     fun testCues() {
         testJob?.cancel()
         testJob = viewModelScope.launch {
             val current = settings.value
-            val sound = if (current.soundEnabled) SoundPlayer(current.soundVolume) else null
+            // The voice needs longer than a beep before the next cue comes.
+            val gap = if (current.voiceEnabled) 2_600L else 1_300L
+            fun cue(cue: TimerCue, state: TimerUiState) = cuePlayer.play(cue, state, current, LinkState.OFF)
             try {
-                fun cue(cue: TimerCue) {
-                    if (current.vibrate) haptics.play(cue, current.vibrationLevel)
-                    when (cue) {
-                        TimerCue.COUNTDOWN_TICK -> sound?.countdownTick()
-                        TimerCue.WORK_START -> sound?.workStart()
-                        TimerCue.REST_START -> sound?.restStart()
-                        TimerCue.FINISH -> sound?.finish()
-                    }
-                }
-
+                cuePlayer.warmUp(current)
                 repeat(3) {
-                    cue(TimerCue.COUNTDOWN_TICK)
+                    cue(TimerCue.COUNTDOWN_TICK, sampleState(0, TimerPhase.LEAD_IN))
                     delay(700)
                 }
-                cue(TimerCue.WORK_START)
-                delay(1300)
-                cue(TimerCue.REST_START)
-                delay(1300)
-                cue(TimerCue.FINISH)
-                delay(900)
+                cue(TimerCue.WORK_START, sampleState(0))
+                delay(gap)
+                cue(TimerCue.REST_START, sampleState(1))
+                delay(gap)
+                cue(TimerCue.FINISH, sampleState(2, TimerPhase.FINISHED))
+                delay(gap)
             } finally {
-                sound?.release()
+                cuePlayer.release()
             }
         }
+    }
+
+    /** A tiny made-up workout, so the voice has names to read in a test. */
+    private fun sampleState(index: Int, phase: TimerPhase = TimerPhase.RUNNING) = TimerUiState(
+        intervals = listOf(
+            Interval("Squats", IntervalType.WORK, 40),
+            Interval("Rest", IntervalType.REST, 20),
+            Interval("Lunges", IntervalType.WORK, 40),
+        ),
+        currentIndex = index,
+        phase = phase,
+    )
+
+    override fun onCleared() {
+        cuePlayer.release()
     }
 
     fun setThemeMode(mode: ThemeMode) {
@@ -304,6 +336,13 @@ fun PhoneSettingsScreen(
                 onLevelChange = viewModel::setSoundLevel,
             )
             Spacer(Modifier.height(8.dp))
+            SwitchRow(
+                title = "Voice",
+                caption = "Says each exercise as it starts",
+                checked = settings.voiceEnabled,
+                onCheckedChange = viewModel::setVoiceEnabled,
+            )
+            Spacer(Modifier.height(8.dp))
             CueRow(
                 title = "Vibration",
                 checked = settings.vibrate,
@@ -312,7 +351,9 @@ fun PhoneSettingsScreen(
                 color = typeColor(IntervalType.WORK),
                 onLevelChange = viewModel::setVibrationLevel,
             )
-            if (settings.watchLink != WatchLinkMode.OFF) {
+            // Only meaningful when there is a watch to join.
+            val watchPaired = rememberWatchDevice().connection != WatchConnection.NO_WATCH
+            if (settings.watchLink != WatchLinkMode.OFF && watchPaired) {
                 Spacer(Modifier.height(16.dp))
                 LabeledChoice(
                     label = "When watch joins",
@@ -436,6 +477,32 @@ internal fun CueRow(
         } else {
             Spacer(Modifier.weight(1f))
         }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** A label with a short explanation beside it, and a switch. */
+@Composable
+internal fun SwitchRow(
+    title: String,
+    caption: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = title.labelCase(),
+            style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
+            modifier = Modifier.width(LabelWidth),
+        )
+        Text(
+            text = caption,
+            style = captionStyle(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+        )
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

@@ -1,7 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+// The version lives in gradle.properties, shared with the phone app.
+val appVersionName: String by project
+val appVersionNumber: String by project
+
+// Signing works the same as in the phone app: see app/build.gradle.kts.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val signForPlay = providers.gradleProperty("play").isPresent
+if (signForPlay && keystoreProperties.isEmpty) {
+    throw GradleException("-Pplay needs keystore.properties; see docs/RELEASE.md")
 }
 
 android {
@@ -10,22 +26,37 @@ android {
 
     defaultConfig {
         // Same applicationId as the phone app: required so the two apps are
-        // recognized as a phone+watch pair (and for Data Layer sync later).
+        // recognized as a phone+watch pair and can sync.
         applicationId = "com.august.intervaltimer"
         minSdk = 30
-        targetSdk = 34
-        versionCode = 17
-        versionName = "0.17"
+        // Google Play's minimum for Wear OS apps since August 2026.
+        targetSdk = 35
+        // One more than the phone build: Play refuses two files with the same code.
+        versionCode = appVersionNumber.toInt() * 10 + 1
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (signForPlay) {
+            create("upload") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
-        // The build that goes on the devices: shrunk and optimised by R8,
-        // signed with the same debug key so it installs over earlier builds
-        // without losing data and stays paired with the other device.
+        // Matches the phone app's debug build, so a test phone and test watch still pair.
+        debug {
+            applicationIdSuffix = ".test"
+        }
+        // The build that goes on the devices and to Play: shrunk and optimised by R8.
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (signForPlay) "upload" else "debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -38,10 +69,6 @@ android {
     }
     buildFeatures {
         compose = true
-    }
-    // The watch still targets SDK 34; don't let that lint warning block release builds.
-    lint {
-        checkReleaseBuilds = false
     }
 }
 

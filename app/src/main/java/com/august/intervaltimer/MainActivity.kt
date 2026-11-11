@@ -35,13 +35,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -51,11 +50,11 @@ import androidx.navigation.navArgument
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.PhoneLiveLink
 import com.august.intervaltimer.data.ThemeMode
+import com.august.intervaltimer.data.WatchConnection
 import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.data.WatchRequestNotification
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.model.Interval
-import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.ActivityScreen
 import com.august.intervaltimer.ui.EditorScreen
 import com.august.intervaltimer.ui.LibraryScreen
@@ -66,6 +65,8 @@ import com.august.intervaltimer.ui.WorkoutDetailScreen
 import com.august.intervaltimer.ui.components.DialBottomBar
 import com.august.intervaltimer.ui.theme.IntervalTimerTheme
 import com.august.intervaltimer.ui.theme.isDial
+import com.august.intervaltimer.workout.PhoneWorkout
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -93,15 +94,27 @@ class MainActivity : ComponentActivity() {
     }
 
     // Tells the listener service whether to show a banner or a notification.
+    // And lets a running workout count more slowly while nobody is looking.
     override fun onStart() {
         super.onStart()
         PhoneLiveLink.appVisible = true
+        PhoneWorkout.setVisible(true)
     }
 
     override fun onStop() {
         super.onStop()
         PhoneLiveLink.appVisible = false
+        PhoneWorkout.setVisible(false)
     }
+}
+
+/**
+ * Back one screen, but never past Home. Without the check, a second tap on a
+ * back arrow while its screen is still sliding away removes Home as well and
+ * leaves the app showing nothing.
+ */
+private fun NavController.goBack() {
+    if (previousBackStackEntry != null) popBackStack()
 }
 
 private data class TopLevelPage(
@@ -131,24 +144,44 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
     // on is still selected after visiting a detail screen and coming back.
     val pagerState = rememberPagerState { topLevelPages.size }
     val scope = rememberCoroutineScope()
-    // One timer for the whole app: whichever screen starts a session hands
-    // its intervals to this ViewModel, then navigates to the timer screen.
-    val timerViewModel: TimerViewModel = viewModel()
-    // Name of the workout being run, saved with it in History.
-    var sessionName by rememberSaveable { mutableStateOf<String?>(null) }
 
-    fun startWorkout(name: String, intervals: List<Interval>) {
-        sessionName = name
-        timerViewModel.start(intervals)
-        // AUTO asks the watch to run it too; MANUAL waits for LINK WATCH; OFF does nothing.
-        PhoneLiveLink.begin(app, timerViewModel, name, intervals, settings.watchLink)
+    // Notifications are asked for at the moment they are useful, not at launch:
+    // before the first workout (for the notification that keeps it running in
+    // the background), and once a watch with the app is connected (so it can
+    // ask the phone to follow). Whatever the answer, the workout then starts.
+    var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        afterPermission?.invoke()
+        afterPermission = null
+    }
+    fun withNotifications(then: () -> Unit) {
+        val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+            app, Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            then()
+        } else {
+            afterPermission = then
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    // The workout belongs to PhoneWorkout, not to a screen, so it keeps
+    // running when the app is not showing.
+    fun startWorkout(name: String, intervals: List<Interval>, navigate: () -> Unit) {
+        withNotifications {
+            // AUTO asks the watch to run it too; MANUAL waits for LINK WATCH; OFF does nothing.
+            PhoneWorkout.start(app, name, intervals, settings.watchLink)
+            navigate()
+        }
     }
 
     // The user chose to join a workout that is running on the watch.
     fun followWatch(pending: WatchRequest) {
         WatchRequestNotification.cancel(app)
-        if (PhoneLiveLink.follow(app, timerViewModel, pending)) {
-            sessionName = pending.request.sessionName
+        if (PhoneWorkout.follow(app, pending)) {
             navController.navigate("timer") { launchSingleTop = true }
         }
     }
@@ -160,24 +193,30 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
         }
     }
 
-    // Asked when the watch link is on, so a request from the watch can show a notification.
-    val notificationPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
     LaunchedEffect(Unit) {
-        app.settingsRepository.settings.map { it.watchLink }.distinctUntilChanged().collect { watchLink ->
-            val granted = ContextCompat.checkSelfPermission(
-                app, Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (watchLink != WatchLinkMode.OFF && Build.VERSION.SDK_INT >= 33 && !granted) {
-                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        combine(
+            app.settingsRepository.settings.map { it.watchLink },
+            app.watchDevice.state.map { it.connection },
+        ) { watchLink, connection ->
+            watchLink != WatchLinkMode.OFF && connection == WatchConnection.CONNECTED
+        }.distinctUntilChanged().collect { watchInUse ->
+            if (watchInUse && afterPermission == null) withNotifications { }
         }
     }
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = currentRoute == "home"
+
+    // A workout is running but its screen is not showing: the app was reopened
+    // from the notification, or Android rebuilt the screen. Show the timer.
+    val workoutActive by remember { PhoneWorkout.uiState.map { it.intervals.isNotEmpty() } }
+        .collectAsState(initial = PhoneWorkout.isActive)
+    LaunchedEffect(workoutActive, currentRoute) {
+        if (workoutActive && currentRoute != null && currentRoute != "timer") {
+            navController.navigate("timer") { launchSingleTop = true }
+        }
+    }
 
     // Where a request from the watch shows as a banner rather than a notification.
     val homeInView = showBottomBar && pagerState.currentPage == 0
@@ -240,9 +279,15 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                                 onQuickSession = { navController.navigate("quickbuild") },
                                 onNewTemplate = { navController.navigate("editor") },
                                 onEditTemplate = { id -> navController.navigate("editor?templateId=$id") },
+                                // A starter opens as a new template with its numbers filled in.
+                                onEditStarter = { starter ->
+                                    navController.navigate(
+                                        "editor?rounds=${starter.rounds}" +
+                                            "&work=${starter.workSeconds}&rest=${starter.restSeconds}"
+                                    )
+                                },
                                 onPlayTemplate = { name, intervals ->
-                                    startWorkout(name, intervals)
-                                    navController.navigate("timer")
+                                    startWorkout(name, intervals) { navController.navigate("timer") }
                                 },
                                 onFollowWatch = ::followWatch,
                             )
@@ -256,9 +301,9 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                 }
                 composable("quickbuild") {
                     QuickBuildScreen(
+                        onBack = { navController.goBack() },
                         onStart = { intervals ->
-                            startWorkout("Quick session", intervals)
-                            navController.navigate("timer")
+                            startWorkout("Quick session", intervals) { navController.navigate("timer") }
                         },
                         onCustomize = { rounds, work, rest ->
                             navController.navigate("editor?rounds=$rounds&work=$work&rest=$rest")
@@ -275,14 +320,15 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                     ),
                 ) {
                     EditorScreen(
-                        onBack = { navController.popBackStack() },
+                        onBack = { navController.goBack() },
                         onSaved = {
                             navController.popBackStack(route = "home", inclusive = false)
                         },
                         onSaveAndStart = { name, intervals ->
-                            startWorkout(name, intervals)
-                            // Drop the editor, so finishing the workout returns Home.
-                            navController.navigate("timer") { popUpTo("home") }
+                            startWorkout(name, intervals) {
+                                // Drop the editor, so finishing the workout returns Home.
+                                navController.navigate("timer") { popUpTo("home") }
+                            }
                         },
                     )
                 }
@@ -293,14 +339,13 @@ fun IntervalTimerApp(followRequest: WatchRequest? = null, onFollowHandled: () ->
                     ),
                 ) {
                     WorkoutDetailScreen(
-                        onBack = { navController.popBackStack() },
+                        onBack = { navController.goBack() },
                     )
                 }
                 composable("timer") {
+                    // Leaving a workout always lands on Home, wherever it was started from.
                     TimerScreen(
-                        viewModel = timerViewModel,
-                        sessionName = sessionName,
-                        onExit = { navController.popBackStack() },
+                        onExit = { navController.popBackStack(route = "home", inclusive = false) },
                     )
                 }
             }

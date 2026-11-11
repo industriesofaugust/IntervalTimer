@@ -1,5 +1,6 @@
 package com.august.intervaltimer.metrics
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
 import androidx.health.services.client.ExerciseUpdateCallback
@@ -157,6 +158,9 @@ class WorkoutMetricsRecorder(context: Context) {
         runCatching { exerciseClient.clearUpdateCallbackAsync(callback).await() }
     }
 
+    // Lint misreads this constant as private to the library. It is the
+    // documented way to ask "is the running exercise ours?".
+    @SuppressLint("RestrictedApi", "WrongConstant")
     private suspend fun ownsRunningExercise(): Boolean = runCatching {
         exerciseClient.getCurrentExerciseInfoAsync().await().exerciseTrackedStatus ==
             ExerciseTrackedStatus.OWNED_EXERCISE_IN_PROGRESS

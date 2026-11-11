@@ -2,9 +2,11 @@ package com.august.intervaltimer.ui
 
 import android.app.Application
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -31,11 +34,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +53,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.AndroidViewModel
@@ -60,6 +63,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.HealthConnectWriter
+import com.august.intervaltimer.data.PendingDeletes
 import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.PageTitle
@@ -67,12 +71,15 @@ import com.august.intervaltimer.ui.theme.SectionHeader
 import com.august.intervaltimer.ui.theme.captionStyle
 import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -84,30 +91,37 @@ class ActivityViewModel(app: Application) : AndroidViewModel(app) {
     private val healthConnect = HealthConnectWriter(app)
 
     // Workouts the user deleted that can still be undone: hidden, not yet removed.
-    private val pendingIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val pending = PendingDeletes(viewModelScope) { ids -> deleteNow(ids) }
 
-    val results = combine(resultsRepository.observeAll(), pendingIds) { all, pending ->
-        all.filter { it.id !in pending }
+    val results = combine(resultsRepository.observeAll(), pending.hidden) { all, hidden ->
+        all.filter { it.id !in hidden }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun hide(ids: Set<Long>) {
-        pendingIds.value += ids
-    }
+    /**
+     * Hides the workouts and deletes them when the undo time runs out. Returns
+     * the batch to pass to [undo]; empty if they were all already on their way out.
+     */
+    fun deleteWithUndo(ids: Set<Long>): Set<Long> = pending.request(ids)
 
     /** Undo: the workouts come back and nothing was touched. */
-    fun restore(ids: Set<Long>) {
-        pendingIds.value -= ids
+    fun undo(batch: Set<Long>) {
+        pending.undo(batch)
     }
 
     /** The same delete as the detail page: the workout here, then its records in Health Connect. */
-    fun deleteNow(ids: Set<Long>) {
-        viewModelScope.launch {
-            ids.forEach { id ->
-                val result = resultsRepository.getById(id)
-                resultsRepository.deleteById(id)
-                if (result != null) healthConnect.delete(result)
-            }
-            pendingIds.value -= ids
+    private suspend fun deleteNow(ids: Set<Long>) {
+        ids.forEach { id ->
+            val result = resultsRepository.getById(id)
+            resultsRepository.deleteById(id)
+            if (result != null) healthConnect.delete(result)
+        }
+    }
+
+    // The app is closing with deletes still waiting: the user asked for them, so finish them.
+    override fun onCleared() {
+        val waiting = pending.takeAll()
+        if (waiting.isNotEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch { deleteNow(waiting) }
         }
     }
 }
@@ -150,24 +164,20 @@ fun ActivityScreen(
     // Leaves selection mode before the app goes back a page.
     BackHandler(enabled = selecting) { selected = emptySet() }
 
-    // Hides the workouts now; they are only deleted once the snackbar runs out or is dismissed.
+    // Hides the workouts now; they are deleted when the undo time runs out. The
+    // message below only offers UNDO. Whether it is replaced, swiped away or the
+    // screen is left makes no difference to the delete, which keeps its own clock.
     fun deleteWithUndo(ids: Set<Long>) {
         selected = selected - ids
-        viewModel.hide(ids)
-        val message = if (ids.size == 1) "Workout deleted" else "${ids.size} workouts deleted"
+        val batch = viewModel.deleteWithUndo(ids)
+        if (batch.isEmpty()) return
+        val message = if (batch.size == 1) "Workout deleted" else "${batch.size} workouts deleted"
         scope.launch {
-            // Dismissing an older snackbar finishes its delete.
             snackbarHost.currentSnackbarData?.dismiss()
-            var undone = false
-            try {
-                val answer = withTimeoutOrNull(5_000) {
-                    snackbarHost.showSnackbar(message, undoLabel, duration = SnackbarDuration.Indefinite)
-                }
-                undone = answer == SnackbarResult.ActionPerformed
-            } finally {
-                // Also runs when the screen is left, so a pending delete is never forgotten.
-                if (undone) viewModel.restore(ids) else viewModel.deleteNow(ids)
+            val answer = withTimeoutOrNull(PendingDeletes.UNDO_MILLIS) {
+                snackbarHost.showSnackbar(message, undoLabel, duration = SnackbarDuration.Indefinite)
             }
+            if (answer == SnackbarResult.ActionPerformed) viewModel.undo(batch)
         }
     }
 
@@ -343,7 +353,15 @@ private fun SelectionHeader(count: Int, onDelete: () -> Unit, onCancel: () -> Un
     }
 }
 
-/** Swipe left to delete, with a DELETE panel revealed behind the card. */
+/**
+ * Swipe left to delete, with a DELETE panel revealed behind the card.
+ *
+ * Written by hand rather than with Material's SwipeToDismissBox, whose saved
+ * state made one swipe delete again and again (see PendingDeletes). Here the
+ * position is a plain remembered number that starts at zero every time the
+ * card appears, and [onDelete] is called from exactly one place: once, when a
+ * finger lifts with the card dragged past the threshold.
+ */
 @Composable
 private fun SwipeToDeleteBox(
     enabled: Boolean,
@@ -352,51 +370,89 @@ private fun SwipeToDeleteBox(
     content: @Composable () -> Unit,
 ) {
     val currentOnDelete by rememberUpdatedState(onDelete)
-    val state = rememberSwipeToDismissBoxState(
-        // The card is hidden by the list as soon as it is deleted, so the box itself
-        // never stays swiped away. If it did, the swipe state is saved per card and a
-        // card brought back with UNDO would come back stuck off to the side.
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) currentOnDelete()
-            false
-        },
-    )
-    SwipeToDismissBox(
-        state = state,
-        modifier = modifier,
-        enableDismissFromStartToEnd = false,
-        // Swipe-to-delete is switched off until a repeated-delete bug is fixed and tested
-        // on a separate test build; select + DELETE still works.
-        gesturesEnabled = false,
-        backgroundContent = {
-            if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.error)
-                        .padding(horizontal = 24.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Delete".labelCase(),
-                        style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onError,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onError,
-                    )
-                }
+    val scope = rememberCoroutineScope()
+    val offset = remember { Animatable(0f) }
+    var widthPx by remember { mutableIntStateOf(0) }
+    var deleted by remember { mutableStateOf(false) }
+
+    // Leaving selection mode puts a half-dragged card back.
+    LaunchedEffect(enabled) {
+        if (!enabled && !deleted) offset.snapTo(0f)
+    }
+    // A deleted card is taken off the screen by the list, and this state goes
+    // with it. If the card is somehow still here a moment later, put it back
+    // in view rather than leave it stranded off to the side.
+    LaunchedEffect(deleted) {
+        if (deleted) {
+            delay(1_000)
+            offset.snapTo(0f)
+            deleted = false
+        }
+    }
+
+    Box(modifier = modifier.onSizeChanged { widthPx = it.width }) {
+        if (offset.value < 0f) {
+            Row(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.error)
+                    .padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Delete".labelCase(),
+                    style = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onError,
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onError,
+                )
             }
-        },
-    ) {
-        content()
+        }
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .then(
+                    if (!enabled) Modifier else Modifier.pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onHorizontalDrag = { change, dragAmount ->
+                                if (deleted) return@detectHorizontalDragGestures
+                                change.consume()
+                                val target = (offset.value + dragAmount).coerceIn(-widthPx.toFloat(), 0f)
+                                scope.launch { offset.snapTo(target) }
+                            },
+                            onDragCancel = {
+                                if (!deleted) scope.launch { offset.animateTo(0f) }
+                            },
+                            onDragEnd = {
+                                if (deleted) return@detectHorizontalDragGestures
+                                if (offset.value < -widthPx * SWIPE_DELETE_FRACTION) {
+                                    // Set first, so nothing after this can report a second delete.
+                                    deleted = true
+                                    scope.launch {
+                                        offset.animateTo(-widthPx.toFloat())
+                                        currentOnDelete()
+                                    }
+                                } else {
+                                    scope.launch { offset.animateTo(0f) }
+                                }
+                            },
+                        )
+                    }
+                ),
+        ) {
+            content()
+        }
     }
 }
+
+/** How far across a card must be dragged before letting go deletes it. */
+private const val SWIPE_DELETE_FRACTION = 0.4f
 
 @Composable
 private fun StatTile(

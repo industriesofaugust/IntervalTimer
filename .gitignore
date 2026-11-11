@@ -4,6 +4,10 @@
 .kotlin/
 build/
 local.properties
+# The Play upload key and its passwords never go into git.
+keystore.properties
+*.jks
+*.keystore
 captures/
 .externalNativeBuild/
 .cxx/

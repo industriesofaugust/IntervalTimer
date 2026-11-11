@@ -54,7 +54,9 @@ import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.data.toDomainIntervals
 import com.august.intervaltimer.model.Interval
 import com.august.intervaltimer.design.intervalCountLabel
+import com.august.intervaltimer.model.StarterTemplate
 import com.august.intervaltimer.model.formatDuration
+import com.august.intervaltimer.model.starterTemplates
 import com.august.intervaltimer.ui.components.SessionStrip
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.SectionHeader
@@ -62,14 +64,22 @@ import com.august.intervaltimer.ui.theme.isDial
 import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.ui.theme.nameStyle
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = (app as TimerApp).templatesRepository
 
-    val templates = repository.observeTemplates()
+    // Null until the database has answered, so Home can tell "none yet" from "still loading".
+    private val loadedTemplates = repository.observeTemplates()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val templates = loadedTemplates.map { it.orEmpty() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val loaded = loadedTemplates.map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun deleteTemplate(id: Long) {
         viewModelScope.launch { repository.deleteTemplate(id) }
@@ -85,11 +95,13 @@ fun LibraryScreen(
     onQuickSession: () -> Unit,
     onNewTemplate: () -> Unit,
     onEditTemplate: (Long) -> Unit,
+    onEditStarter: (StarterTemplate) -> Unit,
     onPlayTemplate: (String, List<Interval>) -> Unit,
     onFollowWatch: (WatchRequest) -> Unit,
     viewModel: LibraryViewModel = viewModel(),
 ) {
     val templates by viewModel.templates.collectAsState()
+    val loaded by viewModel.loaded.collectAsState()
     val watchRequest by PhoneLiveLink.watchRequest.collectAsState()
 
     // Drag state: while a card is held, we reorder a local copy of the list
@@ -197,12 +209,25 @@ fun LibraryScreen(
                 }
             }
 
-            if (templates.isEmpty()) {
+            if (templates.isEmpty() && !loaded) {
+                // Still reading the database: show nothing rather than flash the starters.
+            } else if (templates.isEmpty()) {
+                // Nothing saved yet: offer the ready-made workouts, so a new
+                // user has something to press play on straight away.
                 item {
                     Text(
-                        text = "Nothing saved yet. Build a template once, reuse it every workout.",
+                        text = "Nothing saved yet. Try a starter, or tap + New to build your own.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                items(starterTemplates, key = { "starter-${it.name}" }) { starter ->
+                    TemplateCard(
+                        name = starter.name,
+                        intervals = remember(starter) { starter.intervals() },
+                        onEdit = { onEditStarter(starter) },
+                        onPlay = onPlayTemplate,
+                        highlighted = false,
                     )
                 }
             } else {
@@ -210,7 +235,8 @@ fun LibraryScreen(
                     val id = template.template.id
                     val isDragging = draggingId == id
                     TemplateCard(
-                        template = template,
+                        name = template.template.name,
+                        intervals = remember(template) { template.toDomainIntervals() },
                         onEdit = { onEditTemplate(id) },
                         onPlay = onPlayTemplate,
                         highlighted = isDragging,
@@ -321,15 +347,17 @@ private fun <T> List<T>.swap(a: Int, b: Int): List<T> {
     return mutable
 }
 
+/** One workout on Home, saved or ready-made: tap to open it in the editor, or press play. */
 @Composable
 private fun TemplateCard(
-    template: TemplateWithIntervals,
+    name: String,
+    intervals: List<Interval>,
     onEdit: () -> Unit,
     onPlay: (String, List<Interval>) -> Unit,
     highlighted: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val totalSeconds = template.intervals.sumOf { it.durationSeconds }
+    val totalSeconds = intervals.sumOf { it.durationSeconds }
     Surface(
         onClick = onEdit,
         shape = RoundedCornerShape(20.dp),
@@ -344,42 +372,39 @@ private fun TemplateCard(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    text = template.template.name,
+                    text = name,
                     style = nameStyle(),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.height(2.dp))
                 if (isDial()) {
                     Text(
-                        text = "${intervalCountLabel(template.intervals.size)} · ${formatDuration(totalSeconds)}",
+                        text = "${intervalCountLabel(intervals.size)} · ${formatDuration(totalSeconds)}",
                         style = DialType.caption,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(10.dp))
                     // The shape of the session: coral for work, teal for rest.
                     SessionStrip(
-                        intervals = template.toDomainIntervals(),
+                        intervals = intervals,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(end = 12.dp),
                     )
                 } else {
                     Text(
-                        text = "${template.intervals.size} intervals · ${formatDuration(totalSeconds)}",
+                        text = "${intervals.size} intervals · ${formatDuration(totalSeconds)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             FilledIconButton(
-                onClick = {
-                    val intervals = template.toDomainIntervals()
-                    if (intervals.isNotEmpty()) onPlay(template.template.name, intervals)
-                },
+                onClick = { if (intervals.isNotEmpty()) onPlay(name, intervals) },
             ) {
                 Icon(
                     Icons.Filled.PlayArrow,
-                    contentDescription = "Start ${template.template.name}",
+                    contentDescription = "Start $name",
                 )
             }
         }

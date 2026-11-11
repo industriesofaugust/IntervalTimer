@@ -63,6 +63,24 @@ fun DevicesCard(
 
     SectionHeader("Watch")
     Spacer(Modifier.height(8.dp))
+    // No watch is paired with this phone: a short invitation, not a panel of
+    // controls that cannot do anything yet.
+    if (watch.connection == WatchConnection.NO_WATCH) {
+        SettingsCard {
+            WatchRow(watch)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Optional. With a Wear OS watch, workouts also run on your wrist, " +
+                    "with heart rate, and the phone and watch stay in step.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            TroubleshootingSteps(watch.connection)
+        }
+        return
+    }
+
     SettingsCard {
         WatchRow(watch)
         if (watch.connection == WatchConnection.CONNECTED || watch.connection == WatchConnection.NOT_REACHABLE) {
@@ -184,7 +202,7 @@ private fun WatchVersionsAndTemplates(watch: WatchDeviceState) {
     )
     if (watch.versionMismatch) {
         Text(
-            text = "Install the same version on both: run the install script",
+            text = "Update Interval Timer on both the phone and the watch",
             style = captionStyle(),
             color = typeColor(IntervalType.WORK),
         )
@@ -259,9 +277,10 @@ fun TroubleshootingSteps(connection: WatchConnection) {
         WatchConnection.NO_WATCH -> listOf(
             "Pair the watch in the Pixel Watch or Galaxy Wearable app.",
             "Keep Bluetooth on, on the phone and the watch.",
+            "Install Interval Timer on the watch from the Play Store.",
         )
         WatchConnection.APP_MISSING -> listOf(
-            "Install Interval Timer on the watch: connect it and run scripts\\install.ps1.",
+            "Install Interval Timer on the watch: open the Play Store on the watch and look under Apps on your phone.",
             "Open Interval Timer on the watch once.",
         )
         WatchConnection.NOT_REACHABLE -> listOf(

@@ -40,6 +40,7 @@ import com.august.intervaltimer.data.WatchDeviceState
 import com.august.intervaltimer.data.WatchLinkMode
 import com.august.intervaltimer.data.WatchRequest
 import com.august.intervaltimer.model.IntervalType
+import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.ui.settings.TroubleshootingSteps
 import com.august.intervaltimer.ui.settings.connectionLabel
 import com.august.intervaltimer.ui.theme.DialType
@@ -66,6 +67,9 @@ fun WatchReadyStatus(modifier: Modifier = Modifier) {
 @Composable
 private fun WatchReadyRow(modifier: Modifier) {
     val watch = rememberWatchDevice()
+    // No watch is paired with this phone at all: say nothing, rather than
+    // tell someone who has no watch that it is missing.
+    if (watch.connection == WatchConnection.NO_WATCH) return
     val ready = watch.connection == WatchConnection.CONNECTED
     var showHelp by remember { mutableStateOf(false) }
     val color = if (ready) typeColor(IntervalType.REST) else MaterialTheme.colorScheme.outline
@@ -121,6 +125,18 @@ fun rememberWatchDevice(): WatchDeviceState {
     }
     val state by device.state.collectAsState()
     return state
+}
+
+/**
+ * The link state as the timer should show it. On a phone with no watch paired
+ * the "connecting" and "no watch" tags are hidden; the link itself still
+ * tries, so a watch that does turn up joins and shows as usual.
+ */
+@Composable
+fun linkStateToShow(state: LinkState): LinkState {
+    val noWatchPaired = rememberWatchDevice().connection == WatchConnection.NO_WATCH
+    val looking = state == LinkState.CONNECTING || state == LinkState.NO_WATCH
+    return if (noWatchPaired && looking) LinkState.OFF else state
 }
 
 /** Shown on Home while the watch is asking the phone to follow its workout. */

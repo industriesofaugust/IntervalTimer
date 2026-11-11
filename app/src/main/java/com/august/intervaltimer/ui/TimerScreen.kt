@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -32,7 +34,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,117 +50,74 @@ import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.PhoneLiveLink
-import com.august.intervaltimer.data.WhenWatchJoins
-import com.august.intervaltimer.data.recordPhoneWorkout
-import com.august.intervaltimer.haptics.HapticsPlayer
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.sync.LinkState
 import com.august.intervaltimer.sync.LiveMetricsUpdate
 import com.august.intervaltimer.sync.stepsText
-import com.august.intervaltimer.timer.SoundPlayer
-import com.august.intervaltimer.timer.TimerCue
 import com.august.intervaltimer.timer.TimerPhase
 import com.august.intervaltimer.timer.TimerUiState
-import com.august.intervaltimer.timer.TimerViewModel
 import com.august.intervaltimer.ui.theme.Amber
 import com.august.intervaltimer.ui.theme.AmberLight
 import com.august.intervaltimer.ui.theme.Coral
 import com.august.intervaltimer.ui.theme.CoralLight
+import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.Teal
 import com.august.intervaltimer.ui.theme.TealLight
+import com.august.intervaltimer.ui.theme.labelCase
+import com.august.intervaltimer.workout.PhoneWorkout
 
+/**
+ * Shows the workout that [PhoneWorkout] is running. The workout itself (the
+ * countdown, the cues, saving to History) does not live here, so it carries
+ * on when this screen is not showing.
+ */
 @Composable
-fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> Unit) {
-    val state by viewModel.uiState.collectAsState()
+fun TimerScreen(onExit: () -> Unit) {
+    val state by PhoneWorkout.uiState.collectAsState()
+    val sessionName by PhoneWorkout.sessionName.collectAsState()
 
-    // The engine announces cue moments; on the phone we answer with beeps,
-    // if sounds and vibration are enabled in Settings.
     val app = LocalContext.current.applicationContext as TimerApp
     val settings by app.settingsRepository.settings.collectAsState(initial = AppSettings())
-    val soundPlayer = remember(settings.soundEnabled, settings.soundVolume) {
-        if (settings.soundEnabled) SoundPlayer(settings.soundVolume) else null
-    }
-    DisposableEffect(soundPlayer) {
-        onDispose { soundPlayer?.release() }
-    }
-    val haptics = remember { HapticsPlayer(app) }
-    LaunchedEffect(viewModel, soundPlayer, settings.vibrate, settings.vibrationLevel, settings.whenWatchJoins) {
-        viewModel.cues.collect { cue ->
-            // While the watch is running the workout too, the setting decides what the phone adds.
-            // On NO WATCH or LOST the watch is not cueing, so the phone does.
-            val watchJoined = PhoneLiveLink.state.value == LinkState.LINKED
-            val playSound = !watchJoined || settings.whenWatchJoins != WhenWatchJoins.QUIET
-            val playVibration = !watchJoined || settings.whenWatchJoins == WhenWatchJoins.BOTH
-            if (settings.vibrate && playVibration) haptics.play(cue, settings.vibrationLevel)
-            if (!playSound) return@collect
-            when (cue) {
-                TimerCue.COUNTDOWN_TICK -> soundPlayer?.countdownTick()
-                TimerCue.WORK_START -> soundPlayer?.workStart()
-                TimerCue.REST_START -> soundPlayer?.restStart()
-                TimerCue.FINISH -> soundPlayer?.finish()
-            }
-        }
-    }
 
-    // Save the workout to History once, when it finishes or is ended early.
-    // If the watch is linked, it saves it (with heart rate). A watch that has
-    // gone silent (LOST) may not, so then the phone saves its own copy, and
-    // the watch's replaces it if it turns up later.
-    var saved by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(state.phase) {
-        if (state.phase == TimerPhase.FINISHED && !saved && state.elapsedSecondsAtEnd > 0) {
-            saved = true
-            if (!PhoneLiveLink.watchSavesResult) {
-                app.recordPhoneWorkout(sessionName, state, PhoneLiveLink.currentLinkId)
-            }
-        }
+    // The workout is gone: closed here, ended from the notification during
+    // get-ready, or dropped because the watch stopped syncing. Go back.
+    val active = state.intervals.isNotEmpty()
+    LaunchedEffect(active) {
+        if (!active) onExit()
     }
-
-    // The watch owns this workout and sync stopped (here or on the watch):
-    // drop the phone's copy without saving it and go back.
-    LaunchedEffect(viewModel) {
-        PhoneLiveLink.stepOut.collect {
-            viewModel.stop()
-            onExit()
-        }
-    }
-
-    if (state.intervals.isEmpty()) return
+    if (!active) return
 
     KeepScreenOn()
     val metrics by PhoneLiveLink.metrics.collectAsState()
-    val linkState by PhoneLiveLink.state.collectAsState()
+    val rawLinkState by PhoneLiveLink.state.collectAsState()
+    val linkState = linkStateToShow(rawLinkState)
 
-    // Leaving also ends the workout on the watch, if it is still going.
-    val onDone = {
-        PhoneLiveLink.leave(viewModel.uiState.value)
-        viewModel.stop()
-        onExit()
-    }
-    BackHandler(onBack = onDone)
-
-    // The user's own taps are passed on to the watch. What the watch sends
-    // goes straight to the timer, so nothing is sent back.
-    val onTogglePause = {
-        viewModel.togglePause()
-        PhoneLiveLink.sendState(viewModel.uiState.value)
-    }
-    val onSkip = {
-        viewModel.skip()
-        PhoneLiveLink.sendState(viewModel.uiState.value)
-    }
-    val onStopSync = PhoneLiveLink::stopSyncing
+    val finished = state.phase == TimerPhase.FINISHED
+    val leadIn = state.phase == TimerPhase.LEAD_IN
+    // Ending throws away the rest of the workout, so it asks first. During
+    // get-ready nothing has been done yet, so there it just closes.
+    var confirmEnd by remember { mutableStateOf(false) }
     val onEnd = {
-        val before = viewModel.uiState.value
-        // During get-ready nothing has been done, so there is nothing to summarize.
-        if (before.phase == TimerPhase.LEAD_IN) {
-            onDone()
-        } else {
-            viewModel.endEarly()
-            PhoneLiveLink.sendEnd(before)
-        }
+        if (leadIn) PhoneWorkout.end() else confirmEnd = true
     }
+    BackHandler {
+        if (finished) PhoneWorkout.close() else onEnd()
+    }
+    if (confirmEnd && !finished) {
+        EndWorkoutDialog(
+            onEnd = {
+                confirmEnd = false
+                PhoneWorkout.end()
+            },
+            onKeepGoing = { confirmEnd = false },
+        )
+    }
+
+    val onDone = PhoneWorkout::close
+    val onTogglePause = PhoneWorkout::togglePause
+    val onSkip = PhoneWorkout::skip
+    val onStopSync = PhoneLiveLink::stopSyncing
     when {
         isDial() && state.phase == TimerPhase.FINISHED ->
             DialFinishedContent(state = state, sessionName = sessionName, onDone = onDone)
@@ -189,6 +147,31 @@ fun TimerScreen(viewModel: TimerViewModel, sessionName: String?, onExit: () -> U
             onEnd = onEnd,
         )
     }
+}
+
+/** Asked before ending a workout early, so a stray tap or a back swipe cannot lose it. */
+@Composable
+private fun EndWorkoutDialog(onEnd: () -> Unit, onKeepGoing: () -> Unit) {
+    val buttonStyle = if (isDial()) DialType.label else MaterialTheme.typography.labelLarge
+    AlertDialog(
+        onDismissRequest = onKeepGoing,
+        title = { Text("End workout?") },
+        text = { Text("The intervals you have finished are saved to your history.") },
+        confirmButton = {
+            TextButton(onClick = onEnd) {
+                Text("End workout".labelCase(), style = buttonStyle)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onKeepGoing) {
+                Text(
+                    "Keep going".labelCase(),
+                    style = buttonStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
 }
 
 @Composable

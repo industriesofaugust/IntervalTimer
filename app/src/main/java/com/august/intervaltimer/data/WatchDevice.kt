@@ -67,9 +67,13 @@ data class WatchDeviceState(
     val phoneVersionName: String = "",
     val phoneVersionCode: Long = 0,
 ) {
-    /** Both apps should be the same build, or sync can misbehave. */
+    /**
+     * Both apps should be the same version, or sync can misbehave. The names
+     * are compared, not the codes: Google Play needs the phone and watch
+     * builds of one version to carry different codes.
+     */
     val versionMismatch: Boolean
-        get() = info != null && info.appVersionCode != phoneVersionCode
+        get() = info != null && info.appVersionName != phoneVersionName
 }
 
 /**

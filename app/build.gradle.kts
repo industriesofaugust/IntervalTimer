@@ -1,8 +1,27 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+}
+
+// The version lives in gradle.properties, shared with the watch app.
+val appVersionName: String by project
+val appVersionNumber: String by project
+
+// Builds for Google Play are signed with the upload key described in
+// keystore.properties (kept out of git). They are asked for with -Pplay, which
+// scripts\bundle.ps1 does. Every other build keeps the debug key, so builds
+// for your own devices install over each other without losing data.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val signForPlay = providers.gradleProperty("play").isPresent
+if (signForPlay && keystoreProperties.isEmpty) {
+    throw GradleException("-Pplay needs keystore.properties; see docs/RELEASE.md")
 }
 
 android {
@@ -13,18 +32,32 @@ android {
         applicationId = "com.august.intervaltimer"
         minSdk = 26
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.17"
+        versionCode = appVersionNumber.toInt() * 10
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (signForPlay) {
+            create("upload") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
-        // The build that goes on the devices: shrunk and optimised by R8,
-        // signed with the same debug key so it installs over earlier builds
-        // without losing data and stays paired with the other device.
+        // Debug builds are a separate app ("Interval Timer Test") with their
+        // own empty data, so trying things out never touches real workouts.
+        debug {
+            applicationIdSuffix = ".test"
+        }
+        // The build that goes on the devices and to Play: shrunk and optimised by R8.
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (signForPlay) "upload" else "debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -79,6 +112,7 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
 }
