@@ -185,6 +185,9 @@ August on real devices; change anything here that does not feel right.
 - Ending early asks first (`END WORKOUT?` with `KEEP GOING` / `END WORKOUT`),
   from the stop button and from Back. During get-ready it just closes.
 - `DONE` on the finish screen goes Home, wherever the workout was started.
+- When the watch ran the workout too, the phone's finish screen adds
+  `HEART RATE 128 AVG · 150 MAX` and `ACTIVITY 96 STEPS · 32 KCAL` once the
+  watch's result has arrived (a moment after the finish).
 - Cues: beeps and vibration as before, plus an optional `VOICE` switch that
   says the exercise as it starts (`Squats`, `Rest. Next: Lunges`,
   `Workout complete`). Made-up names (`Work 3 of 8`) are not announced as

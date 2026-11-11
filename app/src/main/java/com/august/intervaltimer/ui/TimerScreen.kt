@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import com.august.intervaltimer.TimerApp
 import com.august.intervaltimer.data.AppSettings
 import com.august.intervaltimer.data.PhoneLiveLink
+import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.model.IntervalType
 import com.august.intervaltimer.model.formatDuration
 import com.august.intervaltimer.sync.LinkState
@@ -66,6 +67,8 @@ import com.august.intervaltimer.ui.theme.Teal
 import com.august.intervaltimer.ui.theme.TealLight
 import com.august.intervaltimer.ui.theme.labelCase
 import com.august.intervaltimer.workout.PhoneWorkout
+import kotlinx.coroutines.flow.flowOf
+import kotlin.math.roundToInt
 
 /**
  * Shows the workout that [PhoneWorkout] is running. The workout itself (the
@@ -114,13 +117,20 @@ fun TimerScreen(onExit: () -> Unit) {
         )
     }
 
+    // What the watch measured, for the finish screen. It arrives a moment
+    // after the workout ends, when the watch's result has been saved.
+    val linkId = PhoneLiveLink.currentLinkId
+    val savedResult by remember(linkId, finished) {
+        if (linkId != null && finished) app.resultsRepository.observeByLinkId(linkId) else flowOf(null)
+    }.collectAsState(initial = null)
+
     val onDone = PhoneWorkout::close
     val onTogglePause = PhoneWorkout::togglePause
     val onSkip = PhoneWorkout::skip
     val onStopSync = PhoneLiveLink::stopSyncing
     when {
         isDial() && state.phase == TimerPhase.FINISHED ->
-            DialFinishedContent(state = state, sessionName = sessionName, onDone = onDone)
+            DialFinishedContent(state = state, sessionName = sessionName, result = savedResult, onDone = onDone)
         isDial() ->
             DialRunningContent(
                 state = state,
@@ -134,7 +144,8 @@ fun TimerScreen(onExit: () -> Unit) {
                 onSkip = onSkip,
                 onEnd = onEnd,
             )
-        state.phase == TimerPhase.FINISHED -> FinishedContent(state = state, onDone = onDone)
+        state.phase == TimerPhase.FINISHED ->
+            FinishedContent(state = state, result = savedResult, onDone = onDone)
         else -> RunningContent(
             state = state,
             sessionName = sessionName,
@@ -315,8 +326,15 @@ private fun RunningContent(
     }
 }
 
+/** "128 AVG · 150 MAX", or null when the watch measured no heart rate. */
+internal fun WorkoutResultEntity.heartRateSummary(): String? {
+    val avg = avgHeartRate?.roundToInt() ?: return null
+    val max = maxHeartRate?.roundToInt() ?: return "$avg AVG"
+    return "$avg AVG · $max MAX"
+}
+
 @Composable
-private fun FinishedContent(state: TimerUiState, onDone: () -> Unit) {
+private fun FinishedContent(state: TimerUiState, result: WorkoutResultEntity?, onDone: () -> Unit) {
     // If the session was ended early, only count what was actually done.
     val completed =
         if (state.endedEarly) state.intervals.take(state.completedIntervals) else state.intervals
@@ -359,6 +377,9 @@ private fun FinishedContent(state: TimerUiState, onDone: () -> Unit) {
                 StatRow(label = "Total time", value = formatDuration(totalSeconds))
                 StatRow(label = "Work intervals", value = "${workIntervals.size}")
                 StatRow(label = "Time working", value = formatDuration(workSeconds))
+                result?.heartRateSummary()?.let { StatRow(label = "Heart rate", value = it.lowercase()) }
+                result?.steps?.let { StatRow(label = "Steps", value = "$it") }
+                result?.calories?.let { StatRow(label = "Calories", value = "${it.roundToInt()}") }
             }
         }
         Spacer(Modifier.weight(1f))

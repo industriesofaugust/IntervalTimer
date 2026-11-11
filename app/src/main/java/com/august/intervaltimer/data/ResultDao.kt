@@ -39,6 +39,10 @@ interface ResultDao {
     @Query("SELECT COUNT(*) FROM workout_results WHERE linkId = :linkId")
     suspend fun countByLinkId(linkId: String): Int
 
+    /** The saved result of one linked workout; null until it has been saved. */
+    @Query("SELECT * FROM workout_results WHERE linkId = :linkId LIMIT 1")
+    fun observeByLinkId(linkId: String): Flow<WorkoutResultEntity?>
+
     @Query("DELETE FROM workout_results WHERE linkId = :linkId")
     suspend fun deleteByLinkId(linkId: String)
 

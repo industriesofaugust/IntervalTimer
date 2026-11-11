@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.august.intervaltimer.data.WorkoutResultEntity
 import com.august.intervaltimer.design.CountdownFormat
 import com.august.intervaltimer.design.currentRemainingFraction
 import com.august.intervaltimer.design.formatCountdown
@@ -63,6 +64,7 @@ import com.august.intervaltimer.ui.components.SessionRing
 import com.august.intervaltimer.ui.theme.DialType
 import com.august.intervaltimer.ui.theme.readyColor
 import com.august.intervaltimer.ui.theme.typeColor
+import kotlin.math.roundToInt
 
 /** Just "WORK" or "REST", so attention stays on the present interval. */
 private fun dialLabel(state: TimerUiState): String = when {
@@ -302,6 +304,8 @@ private fun RoundControl(
 internal fun DialFinishedContent(
     state: TimerUiState,
     sessionName: String?,
+    /** The saved workout with what the watch measured; null if there is none (yet). */
+    result: WorkoutResultEntity?,
     onDone: () -> Unit,
 ) {
     val completed =
@@ -363,6 +367,22 @@ internal fun DialFinishedContent(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         StatLine("TIME WORKING", formatDuration(workIntervals.sumOf { it.durationSeconds }))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        // From the watch, when it ran the workout too. These lines appear a
+        // moment after the finish, once its result has arrived.
+        result?.heartRateSummary()?.let {
+            StatLine("HEART RATE", it)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
+        val steps = result?.steps
+        val calories = result?.calories
+        if (steps != null || calories != null) {
+            val parts = listOfNotNull(
+                steps?.let { "$it STEPS" },
+                calories?.let { "${it.roundToInt()} KCAL" },
+            )
+            StatLine("ACTIVITY", parts.joinToString(" · "))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        }
         Spacer(Modifier.weight(1f))
 
         Button(

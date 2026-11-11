@@ -97,9 +97,13 @@ running its full length with the watch screen off, arriving in the phone's
 history and in Health Connect; a phone workout linked to the watch, running to
 its end with the app in the background, saved once. This found and fixed one
 bug the emulator did not show (the "Workout complete" notification stayed
-pinned).
+pinned). Also on the real devices: the end confirmation, the watch's heart
+rate, steps and calories on the phone's finish screen, the detail page's
+heart-rate chart with real data, and the voice starting when switched on.
 
-Not checked yet: the cues, the voice and the music ducking by ear; the live
-status-bar chip on Android 16; swipe-to-delete on the real phone (on purpose:
-never on real data); and the items open in `CLAUDE.md` (heart-rate zones
-chart, a Health Connect delete while watching).
+Not checked yet: how the cues, the voice and the music ducking sound; the
+live status-bar chip on Android 16; the notification's buttons on the real
+phone (the shade shows private notifications, so it was left alone);
+swipe-to-delete on the real phone (on purpose: never on real data); TIME IN
+ZONES with a heart rate high enough to reach a zone (the test was at rest, so
+every zone read 0:00); and a Health Connect delete while watching.

@@ -1,0 +1,48 @@
+# Builds both apps, runs the unit tests and lint on every push, so a mistake
+# shows up on GitHub as a red cross instead of on a device later.
+name: Build
+
+on:
+  push:
+    branches: [main, play-store-ready]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The file is stored without its "can be run" mark, because it was added on Windows.
+      - name: Make the Gradle wrapper runnable
+        run: chmod +x gradlew
+
+      # There is no keystore.properties here, so these are the ordinary builds
+      # (debug key), not the ones signed for Google Play.
+      - name: Build, unit tests and lint
+        run: ./gradlew assembleDebug testDebugUnitTest assembleRelease :app:lintRelease :wear:lintRelease
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            wear/build/reports/
+            app/build/test-results/
+            core/build/test-results/
+          if-no-files-found: ignore

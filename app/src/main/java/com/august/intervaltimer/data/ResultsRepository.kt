@@ -16,6 +16,9 @@ class ResultsRepository(private val dao: ResultDao) {
 
     fun observeAll(): Flow<List<WorkoutResultEntity>> = dao.observeAll()
 
+    /** The saved result of a linked workout, once the watch's copy (or the phone's) is in. */
+    fun observeByLinkId(linkId: String): Flow<WorkoutResultEntity?> = dao.observeByLinkId(linkId)
+
     suspend fun getAll(): List<WorkoutResultEntity> = dao.getAll()
 
     suspend fun getById(id: Long): WorkoutResultEntity? = dao.getById(id)

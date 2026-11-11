@@ -54,28 +54,59 @@ class PrivacyPolicyActivity : ComponentActivity() {
                     ) {
                         PageTitle("Privacy")
                         Spacer(Modifier.height(24.dp))
+                        // The same policy as store/privacy-policy.md and the published
+                        // web page, in shorter words. Keep the three in step.
                         Section(
-                            "What is written",
-                            "When you link Health Connect, each finished workout is saved there: " +
-                                "an exercise session with its work, rest and pause segments, " +
+                            "What is collected",
+                            "Nothing. The app has no account, no ads, no analytics and no " +
+                                "server. It does not ask for the internet permission, so it " +
+                                "cannot send your data to us or to anyone else.",
+                        )
+                        Section(
+                            "What is stored on your devices",
+                            "The workouts you build, your workout history (with heart rate, " +
+                                "steps and calories when the watch measured them), and your " +
+                                "settings, including your age if you enter it.",
+                        )
+                        Section(
+                            "Phone and watch",
+                            "The two apps keep in step through Google's Wear OS data layer. " +
+                                "Your templates, results and settings travel only between " +
+                                "your own phone and your own watch.",
+                        )
+                        Section(
+                            "Health Connect: what is written",
+                            "Only if you link it. Each finished workout is saved there as an " +
+                                "exercise session with its work, rest and pause segments, " +
                                 "plus heart rate, steps and calories when the watch measured them.",
                         )
                         Section(
-                            "What is read",
+                            "Health Connect: what is read",
                             "Your most recent resting heart rate, only to draw heart-rate zones " +
                                 "on a workout. Nothing else is read.",
                         )
                         Section(
-                            "Where it goes",
-                            "Nowhere. Your workouts and your age (if you enter it) stay on your " +
-                                "phone and watch. The app has no account and no server, and sends " +
-                                "nothing to us or to anyone else.",
+                            "How health data is used",
+                            "Only to show you your own workouts. It is never used for " +
+                                "advertising, never sold and never shared.",
                         )
                         Section(
                             "Your control",
                             "Deleting a workout in the app also deletes its Health Connect " +
                                 "records. You can stop sharing, or change what is allowed, in " +
-                                "Settings in the app or in Health Connect.",
+                                "Settings in the app or in Health Connect. Uninstalling the " +
+                                "app removes everything it stored on that device.",
+                        )
+                        Section(
+                            "Voice and backups",
+                            "With voice cues on, exercise names are read aloud by your " +
+                                "phone's own text-to-speech engine. If Android backup is on, " +
+                                "Android may keep a copy of the app's data in your Google " +
+                                "account; the app's publisher never receives it.",
+                        )
+                        Section(
+                            "Contact",
+                            "industriesofaugust@gmail.com",
                         )
                     }
                 }
