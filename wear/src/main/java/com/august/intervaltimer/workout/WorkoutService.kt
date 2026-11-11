@@ -185,7 +185,7 @@ class WorkoutService : Service() {
         val text = statusText(state)
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_timer_notification)
-            .setContentTitle("Interval Timer")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_WORKOUT)
             .setOngoing(true)

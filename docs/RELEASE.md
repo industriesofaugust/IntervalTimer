@@ -19,7 +19,7 @@ removes that device's templates and history; workouts already written to
 Health Connect stay there.
 
 There is also the **debug build**, which Android Studio's Run button installs.
-It is a separate app called "Interval Timer Test" with its own empty data, so
+It is a separate app called "Dialed Test" with its own empty data, so
 it can sit next to the real one and nothing done in it touches real workouts.
 
 ## The upload key

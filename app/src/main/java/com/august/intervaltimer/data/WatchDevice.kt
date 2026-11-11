@@ -31,7 +31,7 @@ enum class WatchConnection {
     /** No watch is paired, or none is known to this phone. */
     NO_WATCH,
 
-    /** A watch is connected but Interval Timer is not installed on it. */
+    /** A watch is connected but the app is not installed on it. */
     APP_MISSING,
 
     /** The watch has the app but cannot be reached right now. */

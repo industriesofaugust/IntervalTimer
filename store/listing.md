@@ -5,15 +5,15 @@ Character limits are Play's; counts are for the text as written here.
 
 ## App name (30 max)
 
-Interval Timer
+Dialed
 
-Many apps on Play share this exact name. Play allows that, but a name people
-can search for helps. Two alternatives that fit the limit, if you want one:
+"Dialed" on its own says nothing about what the app does to someone searching
+the store. The store title may be longer than the name under the icon, so this
+is worth considering (it fits the limit):
 
-- `Interval Timer: HIIT & Tabata` (29)
-- `Dial Interval Timer` (19)
+- `Dialed: Interval Timer` (22)
 
-The name on the phone's home screen stays "Interval Timer" either way.
+The name on the phone's home screen and the watch stays "Dialed" either way.
 
 ## Short description (80 max — 76 used)
 
@@ -21,7 +21,7 @@ Interval timer for HIIT, Tabata and circuits. Phone and Wear OS, no account.
 
 ## Full description (4000 max)
 
-Interval Timer is a workout timer built around one idea: finish the interval you are in. A segmented ring shows the whole session at a glance, the countdown is big enough to read from across the room, and the app tells you what is next before it arrives.
+Dialed is a workout interval timer built around one idea: finish the interval you are in. A segmented ring shows the whole session at a glance, the countdown is big enough to read from across the room, and the app tells you what is next before it arrives.
 
 BUILD A WORKOUT IN SECONDS
 • Quick session: set rounds, work and rest, and go

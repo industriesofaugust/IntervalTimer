@@ -150,15 +150,15 @@ fun LibraryScreen(
                     }
                     if (isDial()) {
                         // The wordmark.
-                        Text(text = "INTERVAL", style = DialType.title)
+                        Text(text = "DIALED", style = DialType.title)
                         Text(
-                            text = "TIMER",
+                            text = "INTERVAL TIMER",
                             style = DialType.label.copy(letterSpacing = 4.sp),
                             color = MaterialTheme.colorScheme.primary,
                         )
                     } else {
                         Text(
-                            text = "Interval timer",
+                            text = "Dialed",
                             style = MaterialTheme.typography.headlineMedium,
                         )
                         Spacer(Modifier.height(6.dp))

@@ -1,4 +1,7 @@
-# Interval Timer
+# Dialed
+
+(The app was called "Interval Timer" until November 2026; the folder, the
+GitHub repo and the package `com.august.intervaltimer` keep the old name.)
 
 A workout interval timer for Android: a phone app and a Wear OS watch app
 that stay in step. Build a workout on the phone, run it on either, and look
@@ -85,8 +88,8 @@ Option A — Android Studio (easiest, for trying things out):
 2. Let Gradle sync finish (first time takes a few minutes).
 3. Pick a device (emulator or your Pixel with USB/wireless debugging on) and press Run ▶.
 
-This installs the debug build, which is a separate app called "Interval Timer
-Test" with its own empty data. It is slower than the real one and safe to
+This installs the debug build, which is a separate app called "Dialed Test"
+with its own empty data. It is slower than the real one and safe to
 experiment in.
 
 Option B — the real app on your own phone and watch:

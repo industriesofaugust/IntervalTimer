@@ -1,6 +1,8 @@
-# Interval Timer — notes for Claude
+# Dialed — notes for Claude
 
 Workout interval timer: a phone app and a Wear OS watch app that stay in step.
+The app is called "Dialed" (renamed from "Interval Timer" on 2026-11-10); the
+folder, the GitHub repo and the package keep the old name on purpose.
 Package `com.august.intervaltimer` (both apps). Kotlin, Compose, Room,
 DataStore, Wear Compose Material 3, Health Services, Health Connect.
 
@@ -34,7 +36,7 @@ policy, console answers and graphics.
   data.** On 2026-10-16 a swipe-to-delete test on the real phone removed 17
   workouts from the app and from Health Connect. Use the emulators, or the
   debug build, which is a separate app (`.test`) with its own empty data.
-- **Never send taps or keys to the real phone unless Interval Timer is the app
+- **Never send taps or keys to the real phone unless Dialed is the app
   in front**, and prefer the emulators. On 2026-11-10 taps meant for the app
   landed in another app the owner was using. Never send `KEYCODE_BACK` to it.
 - Ask before deleting data, granting permissions or anything destructive.

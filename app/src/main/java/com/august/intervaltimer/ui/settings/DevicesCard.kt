@@ -107,7 +107,7 @@ fun DevicesCard(
         Spacer(Modifier.height(16.dp))
         if (!watchCues.loaded) {
             Text(
-                text = "Open Interval Timer on your watch once to load its settings here.",
+                text = "Open Dialed on your watch once to load its settings here.",
                 style = captionStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -186,7 +186,7 @@ private fun WatchVersionsAndTemplates(watch: WatchDeviceState) {
         if (watch.connection == WatchConnection.CONNECTED) {
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Open Interval Timer on the watch to see its version and templates.",
+                text = "Open Dialed on the watch to see its version and templates.",
                 style = captionStyle(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -202,7 +202,7 @@ private fun WatchVersionsAndTemplates(watch: WatchDeviceState) {
     )
     if (watch.versionMismatch) {
         Text(
-            text = "Update Interval Timer on both the phone and the watch",
+            text = "Update Dialed on both the phone and the watch",
             style = captionStyle(),
             color = typeColor(IntervalType.WORK),
         )
@@ -277,14 +277,14 @@ fun TroubleshootingSteps(connection: WatchConnection) {
         WatchConnection.NO_WATCH -> listOf(
             "Pair the watch in the Pixel Watch or Galaxy Wearable app.",
             "Keep Bluetooth on, on the phone and the watch.",
-            "Install Interval Timer on the watch from the Play Store.",
+            "Install Dialed on the watch from the Play Store.",
         )
         WatchConnection.APP_MISSING -> listOf(
-            "Install Interval Timer on the watch: open the Play Store on the watch and look under Apps on your phone.",
-            "Open Interval Timer on the watch once.",
+            "Install Dialed on the watch: open the Play Store on the watch and look under Apps on your phone.",
+            "Open Dialed on the watch once.",
         )
         WatchConnection.NOT_REACHABLE -> listOf(
-            "Open Interval Timer on the watch.",
+            "Open Dialed on the watch.",
             "Check that Bluetooth is on.",
             "Keep the watch near the phone.",
         )

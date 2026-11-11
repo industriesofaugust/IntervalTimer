@@ -178,6 +178,8 @@ Turning sync on and off (v0.16):
 Added on 2026-11-10 while preparing for Google Play. Not yet reviewed with
 August on real devices; change anything here that does not feel right.
 
+- The app is called **Dialed**. Home's wordmark is `DIALED` with
+  `INTERVAL TIMER` under it in the coral label style.
 - A phone workout keeps running when the screen is off or another app is in
   front. A notification shows the interval name, a live countdown, what is
   next, the session as a coloured bar, and `Pause`, `Skip`, `End`. Opening

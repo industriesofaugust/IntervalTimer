@@ -419,7 +419,7 @@ private fun AboutCard() {
     SettingsCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Interval Timer $version".labelCase(),
+                text = "Dialed $version".labelCase(),
                 style = if (isDial()) DialType.label else MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )

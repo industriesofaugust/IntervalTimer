@@ -1,8 +1,8 @@
-# Privacy Policy — Interval Timer
+# Privacy Policy — Dialed
 
 Last updated: 10 November 2026
 
-Interval Timer ("the app") is published by August. It has a phone app and a
+Dialed ("the app"), an interval timer for workouts, is published by August. It has a phone app and a
 Wear OS watch app. This policy explains what they do with your information.
 The short version: your workouts stay on your own devices, and nothing is sent
 to the publisher or to anyone else.
