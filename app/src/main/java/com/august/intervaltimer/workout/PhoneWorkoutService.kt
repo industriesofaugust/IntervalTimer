@@ -84,6 +84,8 @@ class PhoneWorkoutService : Service() {
 
     private fun goForeground(state: TimerUiState) {
         createChannel(this)
+        // A new workout replaces the summary of the last one.
+        NotificationManagerCompat.from(this).cancel(SUMMARY_NOTIFICATION_ID)
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
         // Starting can be refused if the app is somehow not in front; the
         // workout then still runs for as long as the screen stays on.
@@ -102,9 +104,11 @@ class PhoneWorkoutService : Service() {
                 notify(finishedNotification(state))
                 // Stay a moment for the finish cue and for the workout to be saved.
                 delay(FINISH_LINGER_MILLIS)
-                stopForeground(STOP_FOREGROUND_DETACH)
-                // Detaching leaves the last notification up; swap in one that can be swiped away.
-                notify(finishedNotification(state, ongoing = false))
+                // The summary goes up as a notification of its own, one that can be
+                // swiped away. Reusing the service's notification does not work on a
+                // real phone: Android re-posts the old pinned one after ours.
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                notify(finishedNotification(state, ongoing = false), SUMMARY_NOTIFICATION_ID)
                 stopSelf()
             }
             else -> {
@@ -116,8 +120,8 @@ class PhoneWorkoutService : Service() {
     }
 
     @SuppressLint("MissingPermission") // Without the permission Android just hides it.
-    private fun notify(notification: Notification) {
-        runCatching { NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification) }
+    private fun notify(notification: Notification, id: Int = NOTIFICATION_ID) {
+        runCatching { NotificationManagerCompat.from(this).notify(id, notification) }
     }
 
     private fun runningNotification(state: TimerUiState): Notification {
@@ -244,6 +248,7 @@ class PhoneWorkoutService : Service() {
     companion object {
         private const val CHANNEL_ID = "workout"
         private const val NOTIFICATION_ID = 2
+        private const val SUMMARY_NOTIFICATION_ID = 3
         private const val ACTION_PAUSE = "com.august.intervaltimer.workout.PAUSE"
         private const val ACTION_SKIP = "com.august.intervaltimer.workout.SKIP"
         private const val ACTION_END = "com.august.intervaltimer.workout.END"
@@ -261,7 +266,9 @@ class PhoneWorkoutService : Service() {
 
         /** Takes down the "workout complete" notification once the user has seen the summary. */
         fun clearNotification(context: Context) {
-            NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+            val manager = NotificationManagerCompat.from(context)
+            manager.cancel(NOTIFICATION_ID)
+            manager.cancel(SUMMARY_NOTIFICATION_ID)
         }
 
         private fun createChannel(context: Context) {
