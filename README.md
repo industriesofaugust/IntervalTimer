@@ -1,9 +1,25 @@
 # Interval Timer
 
-A workout interval timer for Android (phone) with a Wear OS companion app planned.
-Phone = build and review sessions; watch = run them.
+A workout interval timer for Android: a phone app and a Wear OS watch app
+that stay in step. Build a workout on the phone, run it on either, and look
+back at it afterwards.
 
-## Current status: v0.12
+## Current status: 1.0.0, being prepared for Google Play
+
+- How a release is built and what is left before the first submission:
+  `docs/RELEASE.md`.
+- Play listing text, privacy policy, console answers and graphics: `store/`.
+- How the apps should look and behave: `docs/DESIGN.md`.
+
+New in 1.0: phone workouts keep running with the screen off or another app in
+front (a notification shows the countdown with pause, skip and end), optional
+voice cues, music is turned down briefly during each cue, starter workouts on
+an empty Home, a confirmation before ending a workout, and swipe-to-delete in
+History (hold a workout first) rebuilt so one swipe can only ever delete one
+workout.
+
+The description below was written at v0.12 and is kept for its explanations
+of how the pieces work.
 
 Three modules:
 - `app` — the phone app, three pages behind a bottom bar:
@@ -50,11 +66,6 @@ Design language everywhere: coral = work, teal = rest, amber = get ready.
   trash, watch home redesign, watch level-bar settings, end-early button,
   phone-side watch cue controls
 
-Possible next steps (see `IntervalTimer-Improvement-Plan.md` in the Claude
-Projects folder): bug fixes from the code review, watch foreground service
-with Ongoing Activity and ambient mode, saving phone workouts to history,
-tests.
-
 ## Tests
 
 ```powershell
@@ -69,15 +80,18 @@ is updated, or Studio will refuse to sync the project.
 
 ## How to run
 
-Option A — Android Studio (easiest):
+Option A — Android Studio (easiest, for trying things out):
 1. Open Android Studio → Open → select this folder.
 2. Let Gradle sync finish (first time takes a few minutes).
 3. Pick a device (emulator or your Pixel with USB/wireless debugging on) and press Run ▶.
 
-Option B — command line:
+This installs the debug build, which is a separate app called "Interval Timer
+Test" with its own empty data. It is slower than the real one and safe to
+experiment in.
+
+Option B — the real app on your own phone and watch:
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
-.\gradlew.bat installDebug   # builds and installs to a connected device
+.\scripts\install.ps1   # builds the optimised apps and installs them on every connected device
 ```
 
 ## History, chart, and Health Connect (Phase 6)

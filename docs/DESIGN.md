@@ -172,3 +172,30 @@ Turning sync on and off (v0.16):
 - Sync can be turned back on from the device that owns the workout (phone
   tag `LINK WATCH`, watch chip `SYNC PHONE`); the other device rejoins at
   the current position.
+
+## Phone, version 1.0
+
+Added on 2026-11-10 while preparing for Google Play. Not yet reviewed with
+August on real devices; change anything here that does not feel right.
+
+- A phone workout keeps running when the screen is off or another app is in
+  front. A notification shows the interval name, a live countdown, what is
+  next, the session as a coloured bar, and `Pause`, `Skip`, `End`. Opening
+  the app during a workout always lands on the timer.
+- Ending early asks first (`END WORKOUT?` with `KEEP GOING` / `END WORKOUT`),
+  from the stop button and from Back. During get-ready it just closes.
+- `DONE` on the finish screen goes Home, wherever the workout was started.
+- Cues: beeps and vibration as before, plus an optional `VOICE` switch that
+  says the exercise as it starts (`Squats`, `Rest. Next: Lunges`,
+  `Workout complete`). Made-up names (`Work 3 of 8`) are not announced as
+  "next". Music from other apps is turned down for a moment during a cue.
+- An empty Home offers the three starter workouts as cards: play runs one,
+  a tap opens it in the builder to change and save.
+- A phone with no watch paired shows no watch tags at all (Home, Quick
+  session, timer), and Settings shows a short "optional" card in place of the
+  watch controls. A paired watch brings everything back.
+- Notifications are asked for before the first workout, not at launch.
+- History: hold a workout to select, then swipe left or tap `DELETE`. One
+  swipe deletes one workout; `UNDO` for five seconds; each delete keeps its
+  own clock.
+- Quick session has a back arrow.
