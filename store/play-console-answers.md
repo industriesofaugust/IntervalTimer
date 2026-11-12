@@ -29,10 +29,13 @@ has its own form below.
 
 Not published yet. The text is in `store/privacy-policy.md`. It needs a public
 web address before the app can be submitted, because the app uses health
-permissions. The other app's policy is published from a public GitHub repo
-(`industriesofaugust/daily-james-allen-privacy`); the same approach works
-here, in a new public repo with this policy as `index.html`. Put the address
-here and in `listing.md` once it exists.
+permissions. The publisher's other app, James Allen Daily (a separate,
+unrelated app), has its policy published from a public GitHub repo
+(`industriesofaugust/daily-james-allen-privacy`). The same approach works
+here, but in a **new** public repo of its own with `store/privacy-policy.html`
+as `index.html`. Do not add this policy to the James Allen repo or reuse its
+address: each app needs its own page. Put the address here and in
+`listing.md` once it exists.
 
 The same text is also shown inside the app (Settings → Privacy policy, and
 from Health Connect's permission screen). If `privacy-policy.md` changes, keep

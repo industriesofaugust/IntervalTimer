@@ -6,6 +6,28 @@ folder, the GitHub repo and the package keep the old name on purpose.
 Package `com.august.intervaltimer` (both apps). Kotlin, Compose, Room,
 DataStore, Wear Compose Material 3, Health Services, Health Connect.
 
+## Not the James Allen Daily app
+
+The same publisher (August) has a second, unrelated app: **James Allen
+Daily**, a book reader, in `AndroidStudioProjects\james_allen_meditations_app`.
+A session can be opened in that folder and then be asked to work on this
+one, so check which project a request is about before changing anything.
+
+| | Dialed (this project) | James Allen Daily |
+|---|---|---|
+| Folder | `IntervalTimer` | `james_allen_meditations_app` |
+| GitHub repo | `industriesofaugust/IntervalTimer`, branch `main` | `industriesofaugust/daily-james-allen`, branch `master` |
+| Package | `com.august.intervaltimer` | `com.august.dailyjamesallen` |
+| Upload key | `keystores\intervaltimer-upload.jks` | `keystores\dailyjamesallen-upload.jks` |
+| Privacy policy | not published yet (`store/privacy-policy.html`) | its own public repo and page |
+| Play listing | Health & Fitness, phone and Wear OS | Books & Reference, phone only |
+
+Nothing is shared between them in code, keys, store listings or data. What
+they do share: the publisher's name and contact email, the Play developer
+account, the owner's Pixel phone (both apps are installed on it) and the
+phone emulator. Each project's own `CLAUDE.md` holds its rules; do not carry
+one project's build settings or store answers over to the other.
+
 **Start here:** `docs/DESIGN.md` is the design source of truth,
 `docs/RELEASE.md` is how a build reaches Google Play and what is left before
 the first submission, and `store/` holds the Play listing text, privacy
