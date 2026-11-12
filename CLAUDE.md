@@ -39,6 +39,14 @@ policy, console answers and graphics.
 - **Never send taps or keys to the real phone unless Dialed is the app
   in front**, and prefer the emulators. On 2026-11-10 taps meant for the app
   landed in another app the owner was using. Never send `KEYCODE_BACK` to it.
+- **Never use `adb shell monkey` on the real phone or watch, not even to open
+  the app.** It switches auto-rotate on as a side effect. On 2026-11-10 that
+  left the owner's watch flipping its display upside down when raised (the
+  watch is worn crown-left, which needs the rotation locked at 180°). Open the
+  app with `adb shell am start -n com.august.intervaltimer/.MainActivity`,
+  which changes nothing. The undo is
+  `adb shell cmd window user-rotation lock 2` on the watch (0 on a watch worn
+  crown-right).
 - Ask before deleting data, granting permissions or anything destructive.
   Pause device automation during calls. Stay out of the notification shade
   and other private screens on the real phone.
